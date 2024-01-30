@@ -29,10 +29,7 @@ def SetEncoderClassFactory(
         {
             "depth": 100,
             "other_doc_attention": False,
-            "other_doc_layer": False,
-            "rank_position_embeddings": False,
             "average_doc_embeddings": False,
-            "extra_other_doc_token": False,
             "num_labels": 1,
         },
     )
@@ -47,14 +44,7 @@ def SetEncoderClassFactory(
             encoder.get_extended_attention_mask
         )
         for name, module in self.named_modules():
-            if self.config.other_doc_layer and name.endswith(
-                self.self_attention_pattern
-            ):
-                module.add_module(
-                    "other_doc_layer",
-                    torch.nn.Linear(self.config.hidden_size, self.config.hidden_size),
-                )
-            elif self.config.rank_position_embeddings and name.endswith(
+            if self.config.rank_position_embeddings and name.endswith(
                 f"{self.encoder_name}.embeddings"
             ):
                 module.add_module(

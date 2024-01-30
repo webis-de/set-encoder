@@ -19,7 +19,6 @@ class RoBERTaSetEncoderMixin(BertSetEncoderMixin):
         inputs_embeds: torch.FloatTensor | None = None,
         past_key_values_length: int = 0,
         num_docs: List[int] | None = None,
-        average_doc_embeddings: bool = False,
         rank_position_embeddings: bool | Literal["random", "sorted"] = False,
         depth: int = 100,
     ) -> torch.Tensor:
@@ -60,14 +59,6 @@ class RoBERTaSetEncoderMixin(BertSetEncoderMixin):
 
         if inputs_embeds is None:
             inputs_embeds = embedding_layer.word_embeddings(input_ids)
-        if average_doc_embeddings:
-            average_embeddings = inputs_embeds.clone()
-            padding = input_ids == 0
-            average_embeddings[padding] = 0
-            average_embeddings = average_embeddings.sum(dim=1) / (
-                (~padding).sum(dim=1).unsqueeze(-1)
-            )
-            inputs_embeds[:, 0] = inputs_embeds[:, 0] + average_embeddings
         token_type_embeddings = embedding_layer.token_type_embeddings(token_type_ids)
 
         embeddings = inputs_embeds + token_type_embeddings

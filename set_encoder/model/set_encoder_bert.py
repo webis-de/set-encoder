@@ -21,17 +21,11 @@ class BertSetEncoderMixin(SetEncoderMixin):
         past_key_value: Tuple[Tuple[torch.FloatTensor]] | None = None,
         output_attentions: bool | None = False,
         num_docs: List[int] | None = None,
-        extra_other_doc_token: bool = False,
     ) -> Tuple[torch.Tensor]:
         key_value_hidden_states = hidden_states
         if num_docs is not None:
             key_value_hidden_states = self.cat_other_doc_hidden_states(
-                hidden_states,
-                self_attention_layer.other_doc_layer
-                if hasattr(self, "other_doc_layer")
-                else None,
-                num_docs,
-                extra_other_doc_token,
+                hidden_states, num_docs
             )
         query = self_attention_layer.transpose_for_scores(
             self_attention_layer.query(hidden_states)
@@ -65,7 +59,6 @@ class BertSetEncoderMixin(SetEncoderMixin):
         inputs_embeds: torch.FloatTensor | None = None,
         past_key_values_length: int = 0,
         num_docs: List[int] | None = None,
-        average_doc_embeddings: bool = False,
         rank_position_embeddings: bool | Literal["random", "sorted"] = False,
         depth: int = 100,
     ) -> torch.Tensor:
@@ -100,14 +93,6 @@ class BertSetEncoderMixin(SetEncoderMixin):
 
         if inputs_embeds is None:
             inputs_embeds = embedding_layer.word_embeddings(input_ids)
-        if average_doc_embeddings:
-            average_embeddings = inputs_embeds.clone()
-            padding = input_ids == 0
-            average_embeddings[padding] = 0
-            average_embeddings = average_embeddings.sum(dim=1) / (
-                (~padding).sum(dim=1).unsqueeze(-1)
-            )
-            inputs_embeds[:, 0] = inputs_embeds[:, 0] + average_embeddings
         token_type_embeddings = embedding_layer.token_type_embeddings(token_type_ids)
 
         embeddings = inputs_embeds + token_type_embeddings

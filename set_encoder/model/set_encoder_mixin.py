@@ -13,10 +13,7 @@ class SetEncoderMixin(ABC):
     ADDITIONAL_KWARGS = [
         "depth",
         "other_doc_attention",
-        "other_doc_layer",
         "rank_position_embeddings",
-        "average_doc_embeddings",
-        "extra_other_doc_token",
     ]
 
     def __init__(self, use_flash: bool) -> None:
@@ -59,7 +56,6 @@ class SetEncoderMixin(ABC):
                         attention_forward,
                         module,
                         num_docs=num_docs if self.config.other_doc_attention else None,
-                        extra_other_doc_token=self.config.extra_other_doc_token,
                     )
                 elif name.endswith(f"{self.encoder_name}.embeddings"):
                     module.forward = partial(
@@ -67,7 +63,6 @@ class SetEncoderMixin(ABC):
                         module,
                         num_docs=num_docs,
                         depth=self.config.depth,
-                        average_doc_embeddings=self.config.average_doc_embeddings,
                         rank_position_embeddings=self.config.rank_position_embeddings,
                     )
             return forward(*args, **kwargs)
@@ -117,12 +112,9 @@ class SetEncoderMixin(ABC):
     @staticmethod
     def cat_other_doc_hidden_states(
         hidden_states: torch.Tensor,
-        other_doc_layer: torch.nn.Linear | None,
         num_docs: List[int],
-        extra_other_doc_token: bool = False,
     ) -> torch.Tensor:
-        idx = 1 if extra_other_doc_token else 0
-        split_other_doc_hidden_states = torch.split(hidden_states[:, idx], num_docs)
+        split_other_doc_hidden_states = torch.split(hidden_states[:, 0], num_docs)
         repeated_other_doc_hidden_states = [
             h_states
             for idx, h_states in enumerate(split_other_doc_hidden_states)
@@ -133,8 +125,6 @@ class SetEncoderMixin(ABC):
             batch_first=True,
             padding_value=0,
         )
-        if other_doc_layer is not None:
-            other_doc_hidden_states = other_doc_layer(other_doc_hidden_states)
         key_value_hidden_states = torch.cat(
             [hidden_states, other_doc_hidden_states], dim=1
         )

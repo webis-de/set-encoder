@@ -17,10 +17,7 @@ class SetEncoderModule(pl.LightningModule):
         model_name_or_path: str,
         depth: int = 100,
         other_doc_attention: bool = False,
-        other_doc_layer: bool = False,
-        average_doc_embeddings: bool = False,
         rank_position_embeddings: bool | Literal["random", "sorted"] = False,
-        extra_other_doc_token: bool = False,
         freeze_position_embeddings: bool = False,
         loss_function: loss_utils.LossFunc = loss_utils.RankNet(),
         compile_model: bool = True,
@@ -34,16 +31,9 @@ class SetEncoderModule(pl.LightningModule):
             depth (int, optional): maximum re-ranking depth. Defaults to 100.
             other_doc_attention (bool, optional): toggle to enable cross-document
                 information (sharing of CLS tokens). Defaults to False.
-            other_doc_layer (bool, optional): toggle to enable an additional linear
-                layer that is applied to other CLS tokens. Defaults to False.
-            average_doc_embeddings (bool, optional): toogle to turn document averaging,
-                i.e. every document has a unique 'watermark' consiting of the average
-                token embeddings of the document. Defaults to False.
             rank_position_embeddings (bool | Literal['random', 'sorted'], optional):
                 toggle to turn on rank position embeddings, making the model aware of
                 the initial positions in the initial ranking. Defaults to False.
-            extra_other_doc_token (bool, optional): toggle to use a special token for
-                cross-document information instead of the CLS token. Defaults to False.
             freeze_position_embeddings (bool, optional): toggle to freeze positional
                 encodings. Defaults to False.
             loss_function (loss_utils.LossFunc, optional): the loss function to apply.
@@ -54,9 +44,6 @@ class SetEncoderModule(pl.LightningModule):
         super().__init__()
         self.loss_function = loss_function
         config = transformers.AutoConfig.from_pretrained(model_name_or_path)
-        resize_embeddings = extra_other_doc_token and not (
-            hasattr(config, "extra_other_doc_token") and config.extra_other_doc_token
-        )
         model_class = transformers.AutoModelForSequenceClassification._model_mapping[
             type(config)
         ]
@@ -65,16 +52,9 @@ class SetEncoderModule(pl.LightningModule):
             model_name_or_path,
             depth=depth,
             other_doc_attention=other_doc_attention,
-            other_doc_layer=other_doc_layer,
             rank_position_embeddings=rank_position_embeddings,
-            average_doc_embeddings=average_doc_embeddings,
-            extra_other_doc_token=extra_other_doc_token,
             use_flash=use_flash,
         )
-        if resize_embeddings:
-            self.set_encoder.resize_token_embeddings(
-                self.set_encoder.config.vocab_size + 1, 8
-            )
         if freeze_position_embeddings:
             for name, param in self.set_encoder.named_parameters():
                 if "position_embeddings" in name:
