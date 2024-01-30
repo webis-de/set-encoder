@@ -1,0 +1,30 @@
+model:
+  # model_name_or_path: nreimers/MiniLM-L6-H384-uncased
+  # model_name_or_path: microsoft/MiniLM-L12-H384-uncased
+  # model_name_or_path: Luyu/co-condenser-marco
+  # model_name_or_path: bert-base-uncased
+  model_name_or_path: google/electra-base-discriminator
+  # model_name_or_path: google/electra-large-discriminator
+  # model_name_or_path: experiments/listformer/wandb/run-20231210_145908-miiol19k/files/huggingface_checkpoint
+  # model_name_or_path: experiments/listformer/wandb/run-20231230_162502-rvdznqla/files/huggingface_checkpoint
+  # model_name_or_path: experiments/listformer/wandb/run-20240103_131623-smec31zi/files/huggingface_checkpoint
+  # model_name_or_path: experiments/listformer/wandb/run-20240104_180553-5vgufjf0/files/huggingface_checkpoint
+  # model_name_or_path: microsoft/deberta-v3-base
+  # model_name_or_path: cross-encoder/ms-marco-MiniLM-L-6-v2
+  depth: 100
+  other_doc_attention: true
+  other_doc_layer: false
+  rank_position_embeddings: false
+  average_doc_embeddings: false
+  extra_other_doc_token: false
+  freeze_position_embeddings: true
+  loss_function:
+    # class_path: LocalizedContrastive
+    # class_path: ApproxRankMSE
+    class_path: RankNet
+    init_args:
+      reduction: mean
+      # scale_gains: false
+      discounted: true
+      # temperature: 1.0
+  compile_model: true

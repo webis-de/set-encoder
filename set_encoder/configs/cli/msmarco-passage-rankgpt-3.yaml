@@ -1,0 +1,20 @@
+data:
+  train_ir_dataset_paths:
+    - data/baseline-runs/rank-gpt-3-turbo/__rankgpt__msmarco-passage-train-judged.run
+  truncate: true
+  max_length: 256
+  batch_size: 2
+  val_batch_size: 10
+  predict_batch_size: 1
+  train_sample_size: 20
+  train_sample_depth: -1
+  depth: 20
+  num_relevant_samples: -1
+  min_num_relevant_samples: 0
+  shuffle_queries: true
+  shuffle_docs: false
+  relevant_sampling_strategy: full_random
+  non_relevant_sampling_strategy: random
+  remove_unjudged_docs: false
+  use_ranks_as_qrels: true
+  num_workers: 2

@@ -1,0 +1,5 @@
+lr_scheduler:
+  class_path: LinearSchedulerWithWarmup
+  init_args:
+    num_warmup_steps: 30000
+    verbose: false
