@@ -8,13 +8,9 @@ from transformers.models.electra.modeling_electra import ElectraPreTrainedModel
 from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel
 
 from set_encoder.model.set_encoder_bert import BertSetEncoderMixin
-from set_encoder.model.set_encoder_deberta import DebertaV2SetEncoderMixin
 from set_encoder.model.set_encoder_electra import ElectraSetEncoderMixin
 from set_encoder.model.set_encoder_mixin import SetEncoderMixin
 from set_encoder.model.set_encoder_roberta import RoBERTaSetEncoderMixin
-
-# from set_encoder.model.set_encoder_deberta import
-# from set_encoder.model.set_encoder_t5 import
 
 
 def SetEncoderClassFactory(
