@@ -17,11 +17,11 @@ class SetEncoderModule(pl.LightningModule):
         model_name_or_path: str,
         depth: int = 100,
         other_doc_attention: bool = False,
-        rank_position_embeddings: bool | Literal["random", "sorted"] = False,
         freeze_position_embeddings: bool = False,
         loss_function: loss_utils.LossFunc = loss_utils.RankNet(),
         compile_model: bool = True,
         use_flash: bool = True,
+        fill_random_docs: bool = True,
     ) -> None:
         """SetEncoderModule which wraps a pretrained BERT-based model and adds
         overwrites the forward functions to enable cross-document information.
@@ -31,9 +31,6 @@ class SetEncoderModule(pl.LightningModule):
             depth (int, optional): maximum re-ranking depth. Defaults to 100.
             other_doc_attention (bool, optional): toggle to enable cross-document
                 information (sharing of CLS tokens). Defaults to False.
-            rank_position_embeddings (bool | Literal['random', 'sorted'], optional):
-                toggle to turn on rank position embeddings, making the model aware of
-                the initial positions in the initial ranking. Defaults to False.
             freeze_position_embeddings (bool, optional): toggle to freeze positional
                 encodings. Defaults to False.
             loss_function (loss_utils.LossFunc, optional): the loss function to apply.
@@ -52,8 +49,8 @@ class SetEncoderModule(pl.LightningModule):
             model_name_or_path,
             depth=depth,
             other_doc_attention=other_doc_attention,
-            rank_position_embeddings=rank_position_embeddings,
             use_flash=use_flash,
+            fill_random_docs=fill_random_docs,
         )
         if freeze_position_embeddings:
             for name, param in self.set_encoder.named_parameters():

@@ -1,11 +1,10 @@
 from typing import Type
 
-import torch
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.models.bert.modeling_bert import BertPreTrainedModel
-from transformers.models.deberta_v2.modeling_deberta_v2 import DebertaV2PreTrainedModel
 from transformers.models.electra.modeling_electra import ElectraPreTrainedModel
 from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel
+from transformers.models.t5.modeling_t5 import T5PreTrainedModel
 
 from set_encoder.model.set_encoder_bert import BertSetEncoderMixin
 from set_encoder.model.set_encoder_electra import ElectraSetEncoderMixin
@@ -30,23 +29,20 @@ def SetEncoderClassFactory(
         },
     )
 
-    def __init__(self, config: PretrainedConfig, use_flash: bool = True) -> None:
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        use_flash: bool = True,
+        fill_random_docs: bool = True,
+    ) -> None:
         config.num_labels = 1
         TransformerModel.__init__(self, config)
-        Mixin.__init__(self, use_flash)
-        self.forward = self.model_forward_wrapper(self.forward)
-        encoder = getattr(self, self.encoder_name)
-        encoder.get_extended_attention_mask = self.extended_attention_mask_wrapper(
-            encoder.get_extended_attention_mask
+        Mixin.__init__(
+            self,
+            TransformerModel.forward,
+            use_flash,
+            config.depth if fill_random_docs else None,
         )
-        for name, module in self.named_modules():
-            if self.config.rank_position_embeddings and name.endswith(
-                f"{self.encoder_name}.embeddings"
-            ):
-                module.add_module(
-                    "rank_position_embeddings",
-                    torch.nn.Embedding(self.config.depth, self.config.hidden_size),
-                )
 
     set_encoder_class = type(
         "SetEncoderModel",
@@ -61,12 +57,6 @@ def get_mixin(TransformerModel: Type[PreTrainedModel]) -> Type[SetEncoderMixin]:
         return BertSetEncoderMixin
     elif issubclass(TransformerModel, RobertaPreTrainedModel):
         return RoBERTaSetEncoderMixin
-    # elif issubclass(TransformerModel, DebertaPreTrainedModel):
-    #     return DeBERTaSetEncoderMixin
-    elif issubclass(TransformerModel, DebertaV2PreTrainedModel):
-        return DebertaV2SetEncoderMixin
-    # elif issubclass(TransformerModel, T5PreTrainedModel):
-    #     return T5SetEncoderMixin
     elif issubclass(TransformerModel, ElectraPreTrainedModel):
         return ElectraSetEncoderMixin
     else:

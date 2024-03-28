@@ -7,10 +7,6 @@ from set_encoder.model.loss_utils import (
     ApproxMRR,
     ListNet,
     ListMLE,
-    LambdaNDCG1,
-    LambdaNDCG2,
-    LambdaARP1,
-    LambdaARP2,
     NeuralNDCG,
     NeuralMRR,
     LocalizedContrastive,
@@ -69,34 +65,6 @@ def test_listnet(scores: torch.Tensor, labels: torch.Tensor) -> None:
 
 def test_listmle(scores: torch.Tensor, labels: torch.Tensor) -> None:
     loss_func = ListMLE()
-    loss = loss_func.compute(scores, labels)
-    assert loss
-    loss.backward()
-
-
-def test_lambdandcg1(scores: torch.Tensor, labels: torch.Tensor) -> None:
-    loss_func = LambdaNDCG1()
-    loss = loss_func.compute(scores, labels)
-    assert loss
-    loss.backward()
-
-
-def test_lambdandcg2(scores: torch.Tensor, labels: torch.Tensor) -> None:
-    loss_func = LambdaNDCG2()
-    loss = loss_func.compute(scores, labels)
-    assert loss
-    loss.backward()
-
-
-def test_lambdaarp1(scores: torch.Tensor, labels: torch.Tensor) -> None:
-    loss_func = LambdaARP1()
-    loss = loss_func.compute(scores, labels)
-    assert loss
-    loss.backward()
-
-
-def test_lambdaarp2(scores: torch.Tensor, labels: torch.Tensor) -> None:
-    loss_func = LambdaARP2()
     loss = loss_func.compute(scores, labels)
     assert loss
     loss.backward()
