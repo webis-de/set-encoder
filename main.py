@@ -5,11 +5,11 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LightningCLI  # noqa: F401
 from torch.optim import Optimizer
 
-from set_encoder.data.datamodule import SetEncoderDataModule  # noqa: F401
+from set_encoder.data.datamodule import SetEncoderDataModule
 from set_encoder.model import loss_utils  # noqa: F401
 from set_encoder.model.callbacks import PredictionWriter  # noqa: F401
 from set_encoder.model.loggers import CustomWandbLogger  # noqa: F401
-from set_encoder.model.set_encoder_module import SetEncoderModule  # noqa: F401
+from set_encoder.model.set_encoder_module import SetEncoderModule
 from set_encoder.model.warmup_schedulers import (
     LR_SCHEDULERS,
     ConstantSchedulerWithWarmup,
@@ -38,13 +38,7 @@ class SetEncoderLightningCLI(LightningCLI):
 
     def add_arguments_to_parser(self, parser):
         parser.add_lr_scheduler_args(tuple(LR_SCHEDULERS))
-        parser.link_arguments(
-            "model.init_args.model_name_or_path", "data.init_args.model_name_or_path"
-        )
-        parser.link_arguments(
-            "model.init_args.extra_other_doc_token",
-            "data.init_args.extra_other_doc_token",
-        )
+        parser.link_arguments("model.model_name_or_path", "data.model_name_or_path")
         parser.link_arguments(
             "trainer.max_steps", "lr_scheduler.init_args.num_training_steps"
         )
@@ -73,6 +67,8 @@ def main():
 
     """
     SetEncoderLightningCLI(
+        SetEncoderModule,
+        SetEncoderDataModule,
         save_config_kwargs={"config_filename": "pl_config.yaml", "overwrite": True},
     )
 
