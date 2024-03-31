@@ -47,19 +47,15 @@ class SetEncoderMixin(torch.nn.Module, ABC):
         num_docs: List[int],
     ) -> torch.Tensor:
         split_other_doc_hidden_states = torch.split(hidden_states[:, 0], num_docs)
-        # TODO sample fake docs from mean and variance of hidden states
         repeated_other_doc_hidden_states = []
         for idx, h_states in enumerate(split_other_doc_hidden_states):
-            if self.depth is not None:
-                mean = h_states.mean(0, keepdim=True).expand(
-                    self.depth - num_docs[idx], -1
-                )
+            missing_docs = 0 if self.depth is None else self.depth - num_docs[idx]
+            if missing_docs:
+                mean = h_states.mean(0, keepdim=True).expand(missing_docs, -1)
                 if num_docs[idx] == 1:
                     std = torch.zeros_like(mean)
                 else:
-                    std = h_states.std(0, keepdim=True).expand(
-                        self.depth - num_docs[idx], -1
-                    )
+                    std = h_states.std(0, keepdim=True).expand(missing_docs, -1)
                 sampled_h_states = torch.normal(mean, std).to(h_states)
                 h_states = torch.cat([h_states, sampled_h_states])
             for _ in range(num_docs[idx]):
