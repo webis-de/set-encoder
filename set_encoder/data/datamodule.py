@@ -758,9 +758,11 @@ class SetEncoderDataModule(pl.LightningDataModule):
             self.train_dataset,
             batch_size=self.batch_size,
             collate_fn=self.collate_and_tokenize,
-            shuffle=self.shuffle_queries
-            if isinstance(self.train_dataset, ListwiseDataset)
-            else False,
+            shuffle=(
+                self.shuffle_queries
+                if isinstance(self.train_dataset, ListwiseDataset)
+                else False
+            ),
             num_workers=self.num_workers,
         )
 
@@ -797,8 +799,6 @@ class SetEncoderDataModule(pl.LightningDataModule):
         for sample in samples:
             num_docs.append(len(sample["docs"]))
             query = sample["query"]
-            if self.extra_other_doc_token:
-                query = "[DOC] " + query
             queries.extend([query] * num_docs[-1])
             docs.extend(sample["docs"])
             labels.extend(sample["labels"])
