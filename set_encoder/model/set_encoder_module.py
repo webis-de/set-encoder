@@ -133,6 +133,7 @@ class SetEncoderModule(pl.LightningModule):
             batch_first=True,
             padding_value=loss_utils.PAD_VALUE,
         )
+        labels[labels == -1] = 0
         optimal_labels = torch.nn.utils.rnn.pad_sequence(
             torch.split(batch["optimal_labels"], num_docs),
             batch_first=True,
