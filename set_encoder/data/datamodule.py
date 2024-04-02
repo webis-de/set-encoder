@@ -306,6 +306,7 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         if self.qrels is not None:
             qrels = self.qrels[base].get_group(query_id)
             group = pd.merge(group, qrels, how="outer", on=["query_id", "doc_id"])
+            group = group.sort_values("rank")
             if self.remove_unjudged_docs:
                 group = group.loc[group["relevance"].notnull()]
         else:
