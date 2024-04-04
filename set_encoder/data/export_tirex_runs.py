@@ -80,6 +80,12 @@ def main(args=None):
                 continue
             target_dir.mkdir(parents=True, exist_ok=True)
             target_path.symlink_to(src_path)
+            if "trec-web" in str(target_path):
+                diversity_target_path = target_path.with_stem(
+                    target_path.stem + "-diversity"
+                )
+                diversity_target_path.unlink(missing_ok=True)
+                diversity_target_path.symlink_to(src_path)
 
 
 if __name__ == "__main__":
