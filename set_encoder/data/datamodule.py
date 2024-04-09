@@ -21,11 +21,11 @@ def _read_ir_dataset(
     dataset: ir_datasets.Dataset,
     data_type: Union[Literal["queries"], Literal["qrels"], Literal["scoreddocs"]],
 ) -> pd.DataFrame:
-    # TODO use pd.read_csv to load queries etc faster, see evaluate-set_encoder.ipybn
     if data_type == "queries":
         if not dataset.has_queries():
             raise ValueError(f"dataset {dataset.dataset_id()} does not have queries")
         data = pd.DataFrame(dataset.queries_iter())
+        data = data.rename(columns={"query": "text"}, errors="ignore")
         data = data.loc[:, ["query_id", "text"]]
         data["text"] = data["text"].fillna("").str.strip()
         if data.dtypes["query_id"] != object or data.dtypes["text"] != object:
@@ -34,7 +34,6 @@ def _read_ir_dataset(
         if not dataset.has_qrels():
             raise ValueError(f"dataset {dataset.dataset_id()} does not have qrels")
         data = pd.DataFrame(dataset.qrels_iter())
-        data = data.loc[:, ["query_id", "doc_id", "relevance"]]
         if data.dtypes["query_id"] != object or data.dtypes["doc_id"] != object:
             data = data.astype({"query_id": str, "doc_id": str})
     elif data_type == "scoreddocs":
@@ -212,15 +211,25 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         relevant_sampling_strategy: str,
         depth: int,
         remove_unjudged_docs: bool = False,
-        keep_non_retrieved_relevant: bool = True,
+        keep_non_retrieved: bool | Literal["relevant"] = True,
         shuffle_docs: bool = False,
         doc_fields: Optional[Iterable[str]] = None,
         load_qrels: bool = True,
         use_ranks_as_qrels: bool = False,
+        use_qrels_as_run: bool = False,
     ):
         if depth > -1 and sample_size > depth:
             raise ValueError("sample_size must be smaller or equal to depth")
-        self.runs = self.load_runs(ir_datasets)
+        if use_qrels_as_run:
+            self.runs = self.load_qrels(ir_datasets)
+            for dataset_id in self.runs:
+                self.runs[dataset_id] = self.runs[dataset_id].drop(
+                    ["relevance", "subtopic_id"], axis=1, errors="ignore"
+                )
+                self.runs[dataset_id]["score"] = 0
+                self.runs[dataset_id]["rank"] = 1
+        else:
+            self.runs = self.load_runs(ir_datasets)
         self.qrels = None
         if load_qrels:
             if use_ranks_as_qrels:
@@ -252,6 +261,15 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
                         num_relevant < min_num_relevant_samples
                     ]
                     mismatched_query_ids.update(invalid_queries.index)
+                if "subtopic_id" in qrels[dataset_id]:
+                    no_subtopic_queries = (
+                        (qrels[dataset_id].subtopic_id == "0")
+                        .groupby(qrels[dataset_id].query_id)
+                        .all()
+                    )
+                    mismatched_query_ids.update(
+                        no_subtopic_queries.loc[no_subtopic_queries].index.values
+                    )
                 if mismatched_query_ids:
                     self.runs[dataset_id] = self.runs[dataset_id].loc[
                         ~self.runs[dataset_id].query_id.isin(mismatched_query_ids)
@@ -285,7 +303,7 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         self.non_relevant_sampling_strategy = non_relevant_sampling_strategy
         self.relevant_sampling_strategy = relevant_sampling_strategy
         self.remove_unjudged_docs = remove_unjudged_docs
-        self.keep_non_retrieved_relevant = keep_non_retrieved_relevant
+        self.keep_non_retrieved = keep_non_retrieved
 
     def __len__(self) -> int:
         return sum(len(query_ids) for query_ids in self.run_query_ids.values())
@@ -304,16 +322,20 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         query_id = self.run_query_ids[base][base_index]
         group = self.groups[base].get_group(query_id).copy()
         if self.qrels is not None:
+            how = "outer" if self.keep_non_retrieved else "left"
             qrels = self.qrels[base].get_group(query_id)
-            group = pd.merge(group, qrels, how="outer", on=["query_id", "doc_id"])
+            group = pd.merge(group, qrels, how=how, on=["query_id", "doc_id"])
             group = group.sort_values("rank")
             if self.remove_unjudged_docs:
                 group = group.loc[group["relevance"].notnull()]
         else:
             group["relevance"] = -1
+        optimal_df = group.loc[group["relevance"] > 0].sort_values(
+            "relevance", ascending=False
+        )
         if self.depth != -1:
             valid = group["rank"] <= self.depth
-            if self.keep_non_retrieved_relevant:
+            if self.keep_non_retrieved == "relevant":
                 valid = valid | (group["relevance"] >= 1)
             group = group.loc[valid]
         group = group.drop_duplicates(subset=["doc_id"])
@@ -321,7 +343,7 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
             :, ["relevance", "rank"]
         ].fillna(-1)
         query = self.queries[base][query_id]
-        doc_sample = self.get_sample(df=group)
+        doc_sample, subtopic_ids = self.get_sample(df=group)
         doc_ids = list(doc_sample)
         if self.shuffle_docs:
             # don't need to shuffle labels, we grab them later by docid
@@ -335,30 +357,40 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
             doc_ids = sorted(doc_ids, key=lambda x: ranks[x])
         docs = []
         labels = []
+        subtopics = []
         for doc_id in doc_ids:
             docs.append(self.docs[base][doc_id])
             labels.append(doc_sample[doc_id])
+            subtopics.append(subtopic_ids[doc_id] if subtopic_ids else None)
         sample = {
             "query": query,
             "docs": docs,
             "labels": labels,
+            "subtopics": subtopics if subtopic_ids else None,
             "doc_ids": doc_ids,
             "query_id": query_id,
         }
-        sample["optimal_labels"] = list(self.get_optimal(group).values())
-        sample["baseline_labels"] = list(self.get_baseline(group, doc_ids).values())
+        sample["optimal_labels"] = optimal_df.set_index("doc_id")[
+            "relevance"
+        ].values.tolist()
+        if subtopic_ids:
+            sample["optimal_subtopics"] = (
+                optimal_df.set_index("doc_id")["subtopic_id"]
+                .values.astype(int)
+                .tolist()
+            )
+        else:
+            sample["optimal_subtopics"] = None
         return sample
 
     @staticmethod
-    def sample_random(df: pd.DataFrame, non_relevant_size: int) -> Dict[str, int]:
+    def sample_random(df: pd.DataFrame, non_relevant_size: int) -> pd.DataFrame:
         non_relevant_df = df.copy()
         non_relevant_df.loc[non_relevant_df.relevance == -1, "relevance"] = 0
         non_relevant_df = non_relevant_df.loc[non_relevant_df.relevance == 0]
         non_relevant_size = min(non_relevant_size, non_relevant_df.shape[0])
-        non_relevant_samples = (
-            non_relevant_df.sample(non_relevant_size)
-            .set_index("doc_id")
-            .relevance.to_dict()
+        non_relevant_samples = non_relevant_df.sample(non_relevant_size).set_index(
+            "doc_id"
         )
         return non_relevant_samples
 
@@ -366,15 +398,13 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
     def sample_first(
         df: pd.DataFrame,
         non_relevant_size: int,
-    ) -> Dict[str, int]:
+    ) -> pd.DataFrame:
         non_relevant_df = df.copy()
         non_relevant_df.loc[non_relevant_df.relevance == -1, "relevance"] = 0
         non_relevant_df = non_relevant_df.loc[non_relevant_df.relevance == 0]
         non_relevant_size = min(non_relevant_size, non_relevant_df.shape[0])
-        non_relevant_samples = (
-            non_relevant_df.iloc[:non_relevant_size]
-            .set_index("doc_id")
-            .relevance.to_dict()
+        non_relevant_samples = non_relevant_df.iloc[:non_relevant_size].set_index(
+            "doc_id"
         )
         return non_relevant_samples
 
@@ -384,7 +414,7 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         non_relevant_size: int,
         first: bool,
         fill_up: bool,
-    ) -> Dict[str, int]:
+    ) -> pd.DataFrame:
         df = df.copy().reset_index(drop=True)
         df = df.loc[df["rank"] != -1]
         pos_df = df.loc[df.relevance >= 1]
@@ -406,28 +436,22 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
             non_relevant_samples = {}
             if _non_relevant_size:
                 if first:
-                    non_relevant_samples = (
-                        non_relevant_df.iloc[:_non_relevant_size]
-                        .set_index("doc_id")
-                        .relevance.to_dict()
-                    )
+                    non_relevant_samples = non_relevant_df.iloc[
+                        :_non_relevant_size
+                    ].set_index("doc_id")
                 else:
-                    non_relevant_samples = (
-                        non_relevant_df.sample(_non_relevant_size)
-                        .set_index("doc_id")
-                        .relevance.to_dict()
-                    )
+                    non_relevant_samples = non_relevant_df.sample(
+                        _non_relevant_size
+                    ).set_index("doc_id")
         if len(non_relevant_samples) < non_relevant_size and fill_up:
             non_relevant_df = df.loc[df.relevance == 0]
             _non_relevant_size = non_relevant_size - len(non_relevant_samples)
             _non_relevant_size = min(_non_relevant_size, non_relevant_df.shape[0])
             remaining_non_relevant_samples = {}
             if _non_relevant_size:
-                remaining_non_relevant_samples = (
-                    non_relevant_df.sample(_non_relevant_size)
-                    .set_index("doc_id")
-                    .relevance.to_dict()
-                )
+                remaining_non_relevant_samples = non_relevant_df.sample(
+                    _non_relevant_size
+                ).set_index("doc_id")
             non_relevant_samples = {
                 **non_relevant_samples,
                 **remaining_non_relevant_samples,
@@ -439,28 +463,24 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
         df: pd.DataFrame,
         non_relevant_size: int,
         first: bool,
-    ) -> Dict[str, int]:
+    ) -> pd.DataFrame:
         non_relevant_df = df.loc[df.relevance == -1].copy()
         non_relevant_df["relevance"] = 0
         non_relevant_size = min(non_relevant_size, non_relevant_df.shape[0])
         if first:
-            non_relevant_samples = (
-                non_relevant_df.iloc[:non_relevant_size]
-                .set_index("doc_id")
-                .relevance.to_dict()
+            non_relevant_samples = non_relevant_df.iloc[:non_relevant_size].set_index(
+                "doc_id"
             )
         else:
-            non_relevant_samples = (
-                non_relevant_df.sample(non_relevant_size)
-                .set_index("doc_id")
-                .relevance.to_dict()
+            non_relevant_samples = non_relevant_df.sample(non_relevant_size).set_index(
+                "doc_id"
             )
         return non_relevant_samples
 
-    def get_relevant_sample(self, df: pd.DataFrame) -> Dict[str, int]:
+    def get_relevant_sample(self, df: pd.DataFrame) -> pd.DataFrame:
         rel_df = df.loc[df.relevance >= 1]
         if rel_df.shape[0] == 0:
-            return {}
+            return pd.DataFrame()
         num_relevant_samples = self.num_relevant_samples
         if num_relevant_samples == -1:
             valid_bool = df["relevance"] >= 1
@@ -479,12 +499,12 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
             raise ValueError(
                 f"Invalid relevant sampling strategy: {self.relevant_sampling_strategy}"
             )
-        rel_samples = rel_df.set_index("doc_id").relevance.to_dict()
+        rel_samples = rel_df.set_index("doc_id")
         return rel_samples
 
     def get_non_relevant_sample(
         self, df: pd.DataFrame, num_relevant_samples: int
-    ) -> Dict[str, int]:
+    ) -> pd.DataFrame:
         non_relevant_size = self.sample_size - num_relevant_samples
         if self.non_relevant_sampling_strategy == "random_first_neg":
             non_relevant_samples = self.sample_first_neg(
@@ -533,32 +553,27 @@ class ListwiseDataset(torch.utils.data.Dataset, IRDataset):
             )
         return non_relevant_samples
 
-    def get_sample(self, df: pd.DataFrame) -> Dict[str, int]:
+    def get_sample(
+        self, df: pd.DataFrame
+    ) -> Tuple[Dict[str, int], Dict[str, int] | None]:
         if self.relevant_sampling_strategy == "full_first":
             sample_size = min(self.sample_size, df.shape[0])
-            return {**df.head(sample_size).set_index("doc_id").relevance.to_dict()}
-        if self.relevant_sampling_strategy == "full_random":
+            sample_df = df.head(sample_size).set_index("doc_id")
+        elif self.relevant_sampling_strategy == "full_random":
             sample_size = min(self.sample_size, df.shape[0])
-            return {**df.sample(sample_size).set_index("doc_id").relevance.to_dict()}
-        relevant_samples = self.get_relevant_sample(df)
-        non_relevant_samples = self.get_non_relevant_sample(df, len(relevant_samples))
-        return {**relevant_samples, **non_relevant_samples}
-
-    @staticmethod
-    def get_baseline(df: pd.DataFrame, doc_ids: List[str]) -> Dict[str, int]:
-        df = df.copy()
-        df = df.loc[df["doc_id"].isin(doc_ids)]
-        df.loc[df["relevance"] == -1, "relevance"] = 0
-        return df.sort_values("rank").set_index("doc_id")["relevance"].to_dict()
-
-    @staticmethod
-    def get_optimal(df: pd.DataFrame) -> Dict[str, int]:
-        return (
-            df.loc[df["relevance"] > 0]
-            .sort_values("relevance", ascending=False)
-            .set_index("doc_id")["relevance"]
-            .to_dict()
-        )
+            sample_df = df.sample(sample_size).set_index("doc_id")
+        else:
+            relevant_samples = self.get_relevant_sample(df)
+            non_relevant_samples = self.get_non_relevant_sample(
+                df, len(relevant_samples)
+            )
+            sample_df = pd.concat([relevant_samples, non_relevant_samples])
+        subtopic_ids = None
+        if "subtopic_id" in sample_df:
+            subtopic_ids = (
+                sample_df["subtopic_id"].astype(float).fillna(0).astype(int).to_dict()
+            )
+        return sample_df["relevance"].to_dict(), subtopic_ids
 
 
 class DocPairDataset(torch.utils.data.IterableDataset, IRDataset):
@@ -628,6 +643,8 @@ class SetEncoderDataModule(pl.LightningDataModule):
         ] = "random",
         remove_unjudged_docs: bool = False,
         use_ranks_as_qrels: bool = False,
+        use_qrels_as_run: bool = False,
+        keep_non_retrieved: bool | Literal["relevant"] = True,
         num_workers: int = 0,
     ):
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_name_or_path)
@@ -659,6 +676,8 @@ class SetEncoderDataModule(pl.LightningDataModule):
         self.non_relevant_sampling_strategy = non_relevant_sampling_strategy
         self.remove_unjudged_docs = remove_unjudged_docs
         self.use_ranks_as_qrels = use_ranks_as_qrels
+        self.use_qrels_as_run = use_qrels_as_run
+        self.keep_non_retrieved = keep_non_retrieved
         self.num_workers = num_workers
 
         self.train_dataset = None
@@ -683,7 +702,8 @@ class SetEncoderDataModule(pl.LightningDataModule):
                 load_qrels=True,
                 use_ranks_as_qrels=self.use_ranks_as_qrels,
                 remove_unjudged_docs=self.remove_unjudged_docs,
-                keep_non_retrieved_relevant=True,
+                keep_non_retrieved=self.keep_non_retrieved,
+                use_qrels_as_run=self.use_qrels_as_run,
             )
 
     def setup_validate(self, ir_datasets: Iterable[ir_datasets.Dataset]) -> None:
@@ -701,7 +721,7 @@ class SetEncoderDataModule(pl.LightningDataModule):
                     shuffle_docs=self.shuffle_docs,
                     doc_fields=self.doc_fields,
                     load_qrels=True,
-                    keep_non_retrieved_relevant=False,
+                    keep_non_retrieved=False,
                 )
             )
 
@@ -720,7 +740,7 @@ class SetEncoderDataModule(pl.LightningDataModule):
                     shuffle_docs=self.shuffle_docs,
                     doc_fields=self.doc_fields,
                     load_qrels=False,
-                    keep_non_retrieved_relevant=False,
+                    keep_non_retrieved=False,
                 )
             )
 
@@ -794,7 +814,9 @@ class SetEncoderDataModule(pl.LightningDataModule):
         queries = []
         docs = []
         labels = []
+        subtopics = []
         optimal_labels = []
+        optimal_subtopics = []
         query_ids = []
         doc_ids = []
         for sample in samples:
@@ -803,10 +825,17 @@ class SetEncoderDataModule(pl.LightningDataModule):
             queries.extend([query] * num_docs[-1])
             docs.extend(sample["docs"])
             labels.extend(sample["labels"])
+            if sample["subtopics"]:
+                subtopics.extend(sample["subtopics"])
             optimal_labels.extend(
-                sample["optimal_labels"]
+                sample["optimal_labels"][: num_docs[-1]]
                 + [0] * (num_docs[-1] - len(sample["optimal_labels"]))
             )
+            if sample["optimal_subtopics"]:
+                optimal_subtopics.extend(
+                    sample["optimal_subtopics"][: num_docs[-1]]
+                    + [0] * (num_docs[-1] - len(sample["optimal_subtopics"]))
+                )
             query_ids.append(sample["query_id"])
             doc_ids.append(sample["doc_ids"])
         encoded = self.tokenizer(
@@ -819,7 +848,11 @@ class SetEncoderDataModule(pl.LightningDataModule):
         )
         batch = {**encoded}
         batch["labels"] = torch.tensor(labels)
+        batch["subtopics"] = torch.tensor(subtopics) if subtopics else None
         batch["optimal_labels"] = torch.tensor(optimal_labels)
+        batch["optimal_subtopics"] = (
+            torch.tensor(optimal_subtopics) if subtopics else None
+        )
         batch["num_docs"] = num_docs
         batch["query_id"] = query_ids
         batch["doc_ids"] = doc_ids

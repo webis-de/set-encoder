@@ -1,14 +1,18 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List
 
+import ir_datasets
 import lightning.pytorch as pl
+import pandas as pd
 import torch
 import transformers
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-from set_encoder.model.set_encoder import SetEncoderClassFactory
+from set_encoder.data.ir_dataset_utils import DASHED_DATASET_MAP
 from set_encoder.model import loss_utils
+from set_encoder.model.validation_utils import evaluate_run
+from set_encoder.model.set_encoder import SetEncoderClassFactory
 
 
 class SetEncoderModule(pl.LightningModule):
@@ -89,7 +93,14 @@ class SetEncoderModule(pl.LightningModule):
             batch_first=True,
             padding_value=loss_utils.PAD_VALUE,
         )
-        loss = self.loss_function.compute(logits, labels)
+        subtopics = None
+        if "subtopics" in batch:
+            subtopics = torch.nn.utils.rnn.pad_sequence(
+                torch.split(batch["subtopics"], num_docs),
+                batch_first=True,
+                padding_value=loss_utils.PAD_VALUE,
+            )
+        loss = self.loss_function.compute(logits, labels, subtopics)
         self.log("loss", loss, prog_bar=True)
         return loss
 
@@ -106,63 +117,74 @@ class SetEncoderModule(pl.LightningModule):
     def validation_step(
         self, batch: Dict[str, Any], batch_idx: int, dataloader_idx: int = 0
     ) -> None:
-        input_ids = batch["input_ids"]
-        attention_mask = batch["attention_mask"]
-        num_docs = batch["num_docs"]
-        out = self.forward(input_ids, attention_mask, num_docs)
-        logits = out.logits
-
         dataset_name = ""
         first_stage = ""
         try:
             ir_dataset_path = Path(
                 self.trainer.datamodule.val_ir_dataset_paths[dataloader_idx]
             )
-            dataset_name = ir_dataset_path.stem + "-"
-            first_stage = ir_dataset_path.parent.name + "-"
+            dataset_name = ir_dataset_path.name[
+                : -len("".join(ir_dataset_path.suffixes))
+            ]
+            first_stage = ir_dataset_path.parent.name
         except RuntimeError:
-            pass
+            return
 
-        logits = torch.nn.utils.rnn.pad_sequence(
-            torch.split(out.logits.squeeze(1), num_docs),
-            batch_first=True,
-            padding_value=loss_utils.PAD_VALUE,
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            torch.split(batch["labels"], num_docs),
-            batch_first=True,
-            padding_value=loss_utils.PAD_VALUE,
-        )
-        labels[labels == -1] = 0
-        optimal_labels = torch.nn.utils.rnn.pad_sequence(
-            torch.split(batch["optimal_labels"], num_docs),
-            batch_first=True,
-            padding_value=loss_utils.PAD_VALUE,
-        )
-        ranks = torch.argsort(torch.argsort(logits, dim=1, descending=True)) + 1
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        num_docs = batch["num_docs"]
 
-        val = loss_utils.get_ndcg(ranks, labels, k=10, optimal_labels=optimal_labels)
-        metric_name = "ndcg@10"
+        out = self.forward(input_ids, attention_mask, num_docs)
+        logits = out.logits.view(-1).tolist()
+        query_ids = [
+            query_id
+            for query_idx, query_id in enumerate(batch["query_id"])
+            for _ in range(num_docs[query_idx])
+        ]
+        doc_ids = [doc_id for doc_ids in batch["doc_ids"] for doc_id in doc_ids]
+
         self.validation_step_outputs.append(
-            (f"{first_stage}{dataset_name}{metric_name}", val)
-        )
-        val = loss_utils.get_mrr(ranks, labels)
-        metric_name = "mrr@max"
-        self.validation_step_outputs.append(
-            (f"{first_stage}{dataset_name}{metric_name}", val)
+            (
+                f"{first_stage}/{dataset_name}",
+                {"score": logits, "query_id": query_ids, "doc_id": doc_ids},
+            )
         )
 
     def on_validation_epoch_end(self) -> None:
-        aggregated = defaultdict(list)
-        for key, value in self.validation_step_outputs:
-            aggregated[key].extend(value)
+        aggregated = defaultdict(lambda: defaultdict(list))
+        for dataset, value_dict in self.validation_step_outputs:
+            for key, value in value_dict.items():
+                aggregated[dataset][key].extend(value)
 
         self.validation_step_outputs.clear()
 
-        for key, value in aggregated.items():
-            stacked = torch.stack(value)
-            stacked[torch.isnan(stacked)] = 0
-            self.log(key, stacked.mean(), sync_dist=True)
+        for dataset, values in aggregated.items():
+            run = pd.DataFrame(values)
+            run["rank"] = run.groupby("query_id")["score"].rank(
+                ascending=False, method="first"
+            )
+            run["Q0"] = "0"
+            run["run_name"] = "set-encoder"
+            dataset_id = dataset.split("/")[1]
+            qrels = pd.DataFrame(
+                ir_datasets.load(DASHED_DATASET_MAP[dataset_id]).qrels_iter()
+            )
+            qrels = qrels.rename(
+                {"doc_id": "docid", "relevance": "rel", "query_id": "query"}, axis=1
+            )
+            metrics = {
+                "NDCG@10": {},
+                "NDCG@10_UNJ" : {"removeUnjudged": True},
+                "UNJ@10": {},
+                "alpha-nDCG@10": {},
+                "alpha-nDCG@10_UNJ": {},
+                "ERR-IA@10": {},
+                "ERR-IA@10_UNJ": {},
+            }
+
+            values = evaluate_run(run, qrels, metrics)
+            for metric, value in values.mean().items():
+                self.log(f"{dataset}/{metric}", value)
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         if self.trainer is not None and self.trainer.log_dir is not None:

@@ -1,4 +1,5 @@
 from typing import Literal, Optional
+import math
 
 import torch
 
@@ -15,6 +16,7 @@ class LossFunc:
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         raise NotImplementedError()
 
@@ -27,6 +29,8 @@ class LossFunc:
             return loss
         if mask is not None:
             loss = loss[~mask]
+        if not loss.numel():
+            return torch.tensor(0.0, requires_grad=True, device=loss.device)
         if self.reduction == "mean":
             return loss.mean()
         if self.reduction == "sum":
@@ -98,10 +102,25 @@ def sinkhorn_scaling(
     return mat
 
 
+def get_mrr(
+    ranks: torch.Tensor, labels: torch.Tensor, k: Optional[int] = None
+) -> torch.Tensor:
+    labels = labels.clamp(None, 1)
+    mask = (ranks == PAD_VALUE) | (ranks == 0) | (labels == PAD_VALUE)
+    ranks = ranks.masked_fill(mask, 1)
+    reciprocal_ranks = 1 / ranks
+    mrr = reciprocal_ranks * labels
+    mrr = mrr.masked_fill(mask, 0)
+    if k is not None:
+        mrr = mrr.masked_fill(ranks > k, 0)
+    mrr = mrr.max(dim=-1)[0]
+    return mrr
+
+
 def get_dcg(
     ranks: torch.Tensor,
     labels: torch.Tensor,
-    k: Optional[int] = None,
+    k: int | None = None,
     scale_gains: bool = True,
 ) -> torch.Tensor:
     ranks = ranks.clone()
@@ -120,25 +139,10 @@ def get_dcg(
     return dcgs.sum(dim=-1)
 
 
-def get_mrr(
-    ranks: torch.Tensor, labels: torch.Tensor, k: Optional[int] = None
-) -> torch.Tensor:
-    labels = labels.clamp(None, 1)
-    mask = (ranks == PAD_VALUE) | (ranks == 0) | (labels == PAD_VALUE)
-    ranks = ranks.masked_fill(mask, 1)
-    reciprocal_ranks = 1 / ranks
-    mrr = reciprocal_ranks * labels
-    mrr = mrr.masked_fill(mask, 0)
-    if k is not None:
-        mrr = mrr.masked_fill(ranks > k, 0)
-    mrr = mrr.max(dim=-1)[0]
-    return mrr
-
-
 def get_ndcg(
     ranks: torch.Tensor,
     labels: torch.Tensor,
-    k: Optional[int],
+    k: int | None = None,
     scale_gains: bool = True,
     optimal_labels: torch.Tensor | None = None,
 ) -> torch.Tensor:
@@ -152,8 +156,72 @@ def get_ndcg(
     return ndcg
 
 
+def get_alpha_dcg(
+    ranks: torch.Tensor,
+    labels: torch.Tensor,
+    subtopics: torch.Tensor,
+    k: int | None = None,
+    scale_gains: bool = False,
+    alpha: float = 0.5,
+) -> torch.Tensor:
+    ranks = ranks.clone()
+    idcs = torch.argsort(ranks)
+    ranks = torch.gather(ranks, -1, idcs)
+    labels = torch.gather(labels, -1, idcs)
+    subtopics = torch.gather(subtopics, -1, idcs)
+    if k is not None:
+        ranks = ranks[:, :k]
+        labels = labels[:, :k]
+        subtopics = subtopics[:, :k]
+    mask = (ranks == PAD_VALUE) | (ranks == 0) | (labels == PAD_VALUE)
+    ranks = ranks.masked_fill(mask, 1)
+    log_ranks = torch.log2(1 + ranks)
+    discounts = 1 / log_ranks
+    discounts = discounts.masked_fill(mask, 0)
+    if scale_gains:
+        gains = 2**labels - 1
+    else:
+        gains = labels
+    subtopic_matrix = torch.nn.functional.one_hot(subtopics)
+    cumulative_subtopics = (
+        subtopic_matrix.cumsum(dim=1).gather(-1, subtopics[..., None]).squeeze(-1)
+    ) - 1
+    gains = gains * torch.pow(1 - alpha, cumulative_subtopics)
+    dcgs = gains * discounts
+    return dcgs.sum(dim=-1)
+
+
+def get_alpha_ndcg(
+    ranks: torch.Tensor,
+    labels: torch.Tensor,
+    subtopics: torch.Tensor,
+    k: int | None = None,
+    scale_gains: bool = False,
+    optimal_labels: torch.Tensor | None = None,
+    optimal_subtopics: torch.Tensor | None = None,
+    alpha: float = 0.5,
+):
+    if optimal_labels is None:
+        optimal_labels = labels
+    if optimal_subtopics is None:
+        optimal_subtopics = subtopics
+    optimal_ranks = torch.argsort(torch.argsort(optimal_labels, descending=True))
+    optimal_ranks = optimal_ranks + 1
+    dcg = get_alpha_dcg(ranks, labels, subtopics, k, scale_gains, alpha)
+    idcg = get_alpha_dcg(
+        optimal_ranks, optimal_labels, optimal_subtopics, k, scale_gains, alpha
+    )
+    ndcg = dcg / (idcg + EPS)
+    return ndcg
+
+
 class MarginMSE(LossFunc):
-    def compute(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         assert logits.shape[-1] == 2
         mask = ((logits == PAD_VALUE) | (labels == PAD_VALUE)).any(-1)
         logits_diff = logits[:, 0] - logits[:, 1]
@@ -163,18 +231,11 @@ class MarginMSE(LossFunc):
 
 
 class RankNet(LossFunc):
-    def __init__(
-        self,
-        reduction: Literal["mean", "sum"] | None = "mean",
-        discounted: bool = False,
-    ):
-        super().__init__(reduction)
-        self.discounted = discounted
-
     def compute(
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         greater = labels[..., None] > labels[:, None]
         logits_mask = logits == PAD_VALUE
@@ -187,17 +248,74 @@ class RankNet(LossFunc):
             | ~greater
         )
         diff = logits[..., None] - logits[:, None]
-        weight = None
-        if self.discounted:
-            ranks = torch.argsort(labels, descending=True) + 1
-            discounts = 1 / torch.log2(ranks + 1)
-            weight = torch.max(discounts[..., None], discounts[:, None])
-            weight = weight.masked_fill(mask, 0)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            diff, greater.to(diff), reduction="none", weight=weight
+            diff, greater.to(diff), reduction="none"
         )
         loss = loss.masked_fill(mask, 0)
         return self.aggregate(loss, mask)
+
+
+class IARankNet(RankNet):
+    def compute(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if subtopics is None:
+            raise ValueError("subtopics must be provided for IARankNet")
+        rank_net = super().compute(logits, labels, subtopics)
+        depth = subtopics.shape[-1]
+        sort_idcs = torch.argsort(logits, dim=-1, descending=True)
+        logits = torch.gather(logits, -1, sort_idcs)
+        labels = torch.gather(labels, -1, sort_idcs)
+        subtopics = torch.gather(subtopics, -1, sort_idcs)
+        num_subtopics = []
+        _optimal_subtopic_count = []
+        for idx, _subtopics in enumerate(subtopics):
+            _, unique_idcs = _subtopics.unique(return_inverse=True)
+            subtopics[idx] = unique_idcs
+            _num_subtopics = unique_idcs.unique().shape[0]
+            num_subtopics.append(_num_subtopics)
+            num_even_topic_dists = math.ceil(depth / _num_subtopics)
+            _optimal_subtopic_count.append(
+                torch.arange(
+                    num_even_topic_dists, device=logits.device
+                ).repeat_interleave(_num_subtopics)[:depth]
+                + 1
+            )
+        optimal_subtopic_count = torch.stack(_optimal_subtopic_count)
+        max_subtopic = max(num_subtopics)
+        cum_subtopic_count = (
+            (
+                subtopics[..., None]
+                .expand(-1, -1, max_subtopic)
+                .eq(torch.arange(max_subtopic, device=logits.device))
+            )
+            .cumsum(dim=1)
+            .gather(-1, subtopics[..., None])
+            .squeeze(-1)
+        )
+        diff_subtopic = (
+            subtopics[:, None]
+            .not_equal(subtopics[..., None])
+            .logical_and(
+                subtopics[..., None]
+                .greater(0)
+                .logical_and(subtopics[:, None].greater(0))
+            )
+        )
+        subtopic_count_larger = cum_subtopic_count > optimal_subtopic_count
+        subtopic_count_smaller = cum_subtopic_count < optimal_subtopic_count
+        incorrect_order = (
+            subtopic_count_larger[..., None] & subtopic_count_smaller[:, None]
+        )
+        diff = logits[..., None] - logits[:, None]
+        diff = diff[incorrect_order & diff_subtopic]
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            diff, torch.zeros_like(diff), reduction="none"
+        )
+        return self.aggregate(loss) + rank_net
 
 
 class ApproxNDCG(LossFunc):
@@ -215,6 +333,7 @@ class ApproxNDCG(LossFunc):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         approx_ranks = get_approx_ranks(logits, self.temperature)
         ndcg = get_ndcg(approx_ranks, labels, k=None, scale_gains=self.scale_gains)
@@ -231,7 +350,12 @@ class ApproxMRR(LossFunc):
         super().__init__(reduction)
         self.temperature = temperature
 
-    def compute(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         approx_ranks = get_approx_ranks(logits, self.temperature)
         mrr = get_mrr(approx_ranks, labels, k=None)
         loss = 1 - mrr
@@ -249,7 +373,12 @@ class ApproxRankMSE(LossFunc):
         self.temperature = temperature
         self.discounted = discounted
 
-    def compute(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         approx_ranks = get_approx_ranks(logits, self.temperature)
         ranks = torch.argsort(labels, descending=True) + 1
         mask = (labels == PAD_VALUE) | (logits == PAD_VALUE)
@@ -268,6 +397,7 @@ class ListNet(LossFunc):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         mask = (labels == PAD_VALUE) | (logits == PAD_VALUE)
         logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
@@ -284,6 +414,7 @@ class ListMLE(LossFunc):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         random_indices = torch.randperm(logits.shape[-1])
         logits_shuffled = logits[:, random_indices]
@@ -337,6 +468,7 @@ class NeuralNDCG(NeuralLoss):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         mask = (labels == PAD_VALUE) | (logits == PAD_VALUE)
         pred_sorted_labels = self.get_sorted_labels(logits, labels, mask)
@@ -352,6 +484,7 @@ class NeuralMRR(NeuralLoss):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
     ) -> torch.Tensor:
         mask = (labels == PAD_VALUE) | (logits == PAD_VALUE)
         labels = labels.clamp(None, 1)
@@ -364,7 +497,12 @@ class NeuralMRR(NeuralLoss):
 
 
 class LocalizedContrastive(LossFunc):
-    def compute(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        subtopics: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         mask = (labels == PAD_VALUE) | (logits == PAD_VALUE)
         logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
         labels = labels.argmax(dim=1)
