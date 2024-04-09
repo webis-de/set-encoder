@@ -3,7 +3,7 @@ import re
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, Literal, Optional, Tuple, Union
 
 import ir_datasets
 import lightning.pytorch as pl
