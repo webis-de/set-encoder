@@ -1,8 +1,12 @@
-# SIGIR 24 Set-Encoder
+# Set-Encoder
 
-This repository contains the code for the paper SIGIR'24 submission: `Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`.
+This repository contains the code for the paper: `Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`.
 
-Prior to fine-tuning a model (we will release fine-tuned models on the HuggingFace Hub in case of acceptance), the training data needs to be created/pre-processed (all data will be released on Zenodo in case of acceptance, but is too large to share in this repository). To generate ColBERTv2 run files required for first-stage fine-tuning, run the following command:
+## Data
+
+Training data must be generated prior to fine-tuning the model. The training code uses TREC-style run files to sample training data. We provide run files for ColBERTv2 and RankGPT-4-Turbo [here](https://zenodo.org/record/5733523). The run files are generated using the instructions below.
+
+To generate ColBERTv2 run files required for first-stage fine-tuning, run the following command:
 
 ```sh
 python set_encoder/data/create_baseline_runs.py \
@@ -24,13 +28,24 @@ python rank_gpt.py \
     --window_size 100
 ```
 
-The main entry point for fine-tuning and inference is `main.py`. To train a model modify the configuration files under `set_encoder/configs/cli` and run:
+## Fine-tuning
+
+The main entry point for fine-tuning and inference is `main.py`. To train a model using ColBERTv2 hard negatives, set the correct paths for the training run files in `set_encoder/configs/msmarco-passage-colbert.yaml` and run:
 
 ```sh
 python main.py fit \
-    --config set_encoder/configs/cli/trainer.yaml \
-    --config set_encoder/configs/cli/set-encoder.yaml \
-    --config set_encoder/configs/cli/optimizer.yaml \
-    --config set_encoder/configs/cli/msmarco-passage.yaml
+    --config set_encoder/configs/colbert-trainer.yaml \
+    --config set_encoder/configs/set-encoder.yaml \
+    --config set_encoder/configs/optimizer.yaml \
+    --config set_encoder/configs/msmarco-passage-colbert.yaml
 ```
 
+To continue with LLM-distillation fine-tuning, set the correct paths for the training run files in `set_encoder/configs/msmarco-passage-rankgpt-4-turbo.yaml` and update the model path in `set_encoder/configs/set_encoder.yaml` and run:
+
+```sh
+python main.py fit \
+    --config set_encoder/configs/rankgpt-trainer.yaml \
+    --config set_encoder/configs/set-encoder.yaml \
+    --config set_encoder/configs/optimizer.yaml \
+    --config set_encoder/configs/msmarco-passage-rankgpt-4-turbo.yaml
+```
