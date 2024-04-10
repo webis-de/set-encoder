@@ -4,7 +4,7 @@ This repository contains the code for the paper: `Set-Encoder: Permutation-Invar
 
 ## Data
 
-Training data must be generated prior to fine-tuning the model. The training code uses TREC-style run files to sample training data. We provide run files for ColBERTv2 and RankGPT-4-Turbo [here](https://zenodo.org/record/5733523). The run files are generated using the instructions below.
+Training data must be generated prior to fine-tuning the model. The training code uses TREC-style run files to sample training data. We provide run files for ColBERTv2 and RankGPT-4-Turbo [here](https://zenodo.org/records/10952882). The run files are generated using the instructions below.
 
 To generate ColBERTv2 run files required for first-stage fine-tuning, run the following command:
 
