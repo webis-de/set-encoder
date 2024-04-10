@@ -163,6 +163,9 @@ class SetEncoderModule(pl.LightningModule):
             run["rank"] = run.groupby("query_id")["score"].rank(
                 ascending=False, method="first"
             )
+            run = run.sort_values(
+                ["query_id", "score"], ascending=[True, False]
+            ).reset_index(drop=True)
             run["Q0"] = "0"
             run["run_name"] = "set-encoder"
             dataset_id = dataset.split("/")[1]
@@ -172,9 +175,13 @@ class SetEncoderModule(pl.LightningModule):
             qrels = qrels.rename(
                 {"doc_id": "docid", "relevance": "rel", "query_id": "query"}, axis=1
             )
+            missing_qids = set(qrels["query"]) - set(run["query_id"])
+            if missing_qids:
+                print(f"removing {len(missing_qids)} queries from {dataset} qrels")
+                qrels = qrels[~qrels["query"].isin(missing_qids)]
             metrics = {
                 "NDCG@10": {},
-                "NDCG@10_UNJ" : {"removeUnjudged": True},
+                "NDCG@10_UNJ": {"removeUnjudged": True},
                 "UNJ@10": {},
                 "alpha-nDCG@10": {},
                 "alpha-nDCG@10_UNJ": {},
@@ -183,7 +190,8 @@ class SetEncoderModule(pl.LightningModule):
             }
 
             values = evaluate_run(run, qrels, metrics)
-            for metric, value in values.mean().items():
+            values = values.mean()
+            for metric, value in values.items():
                 self.log(f"{dataset}/{metric}", value)
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
