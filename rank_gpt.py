@@ -1,4 +1,5 @@
 """Mostly copied from https://github.com/sunnweiwei/RankGPT/blob/main/rank_gpt.py"""
+
 import copy
 import json
 import os
@@ -351,13 +352,14 @@ def to_df(item):
     data = []
     for rank, hit in enumerate(item["hits"]):
         rank += 1
+        depth = len(item["hits"])
         data.append(
             {
                 "query_id": item["query_id"],
                 "Q0": "Q0",
                 "doc_id": hit["doc_id"],
                 "rank": rank,
-                "score": 1 / rank,
+                "score": depth - rank + 1,
                 "system": "rank_gpt",
             }
         )
