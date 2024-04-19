@@ -2,6 +2,10 @@
 
 This repository contains the code for the paper: `Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`.
 
+## Note
+
+The repository is undergoing a major refactoring. The last stable version can be found under commit [`ef99e78`](https://github.com/webis-de/set-encoder/tree/ef99e78e2b40cfce055aa55a27d7ca0c40cf53b4).
+
 ## Data
 
 Training data must be generated prior to fine-tuning the model. The training code uses TREC-style run files to sample training data. We provide run files for ColBERTv2 and RankGPT-4-Turbo [here](https://zenodo.org/records/10952882). The run files are generated using the instructions below.
