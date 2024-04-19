@@ -28,11 +28,7 @@ class SetEncoderMixin(torch.nn.Module, ABC):
         )
         for name, module in self.named_modules():
             if name.endswith(self.self_attention_pattern):
-                module.forward = partial(
-                    attention_forward,
-                    module,
-                    num_docs=num_docs if self.config.other_doc_attention else None,
-                )
+                module.forward = partial(attention_forward, module, num_docs=num_docs)
         return self.original_forward(self, *args, **kwargs)
 
     @abstractmethod
