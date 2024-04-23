@@ -2,7 +2,6 @@ from typing import Sequence, Type, Union
 
 from lightning_ir.data.data import CrossEncoderTrainBatch
 import torch
-import transformers
 from lightning_ir.cross_encoder.model import CrossEncoderConfig, CrossEncoderModel
 from lightning_ir.cross_encoder.module import CrossEncoderModule
 from lightning_ir.cross_encoder.mono import (
@@ -14,15 +13,12 @@ from lightning_ir.loss.loss import LossFunction
 from transformers import (
     AutoConfig,
     AutoModel,
-    BertConfig,
     BertModel,
     BertPreTrainedModel,
-    ElectraConfig,
     ElectraModel,
     ElectraPreTrainedModel,
     PretrainedConfig,
     PreTrainedModel,
-    RobertaConfig,
     RobertaModel,
     RobertaPreTrainedModel,
 )
