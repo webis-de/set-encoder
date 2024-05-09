@@ -1,6 +1,5 @@
 from typing import Sequence, Type
 
-from lightning_ir.data.data import CrossEncoderRunBatch
 import torch
 from lightning_ir.cross_encoder.model import CrossEncoderConfig, CrossEncoderModel
 from lightning_ir.cross_encoder.module import CrossEncoderModule
@@ -9,17 +8,15 @@ from lightning_ir.cross_encoder.mono import (
     MonoElectraModel,
     MonoRobertaModel,
 )
+from lightning_ir.data.data import CrossEncoderRunBatch
 from lightning_ir.loss.loss import LossFunction
 from transformers import (
     AutoConfig,
     AutoModel,
-    BertModel,
     BertPreTrainedModel,
-    ElectraModel,
     ElectraPreTrainedModel,
     PretrainedConfig,
     PreTrainedModel,
-    RobertaModel,
     RobertaPreTrainedModel,
 )
 
@@ -84,9 +81,15 @@ def get_mixin(TransformerModel: Type[PreTrainedModel]) -> Type[SetEncoderMixin]:
         )
 
 
-class Pooler(torch.nn.Module):
-    def __init__(self, encoder: BertModel | ElectraModel | RobertaModel) -> None:
-        super().__init__()
+SetEncoderBertModel = SetEncoderClassFactory(MonoBertModel)
+SetEncoderElectraModel = SetEncoderClassFactory(MonoElectraModel)
+SetEncoderRobertaModel = SetEncoderClassFactory(MonoRobertaModel)
+SetEncoderBertConfig = SetEncoderBertModel.config_class
+SetEncoderElectraConfig = SetEncoderElectraModel.config_class
+SetEncoderRobertaConfig = SetEncoderRobertaModel.config_class
+
+
+class SetEncoderModule(CrossEncoderModule):
 
     def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
@@ -98,31 +101,9 @@ class Pooler(torch.nn.Module):
         )
         logits = logits.view(len(batch.query_ids), -1)
         return logits
-        self.encoder = encoder
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
-        token_type_ids: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        outputs = self.encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-        )
-        return outputs.last_hidden_state[:, 0, :]
 
 
-SetEncoderBertModel = SetEncoderClassFactory(MonoBertModel)
-SetEncoderElectraModel = SetEncoderClassFactory(MonoElectraModel)
-SetEncoderRobertaModel = SetEncoderClassFactory(MonoRobertaModel)
-SetEncoderBertConfig = SetEncoderBertModel.config_class
-SetEncoderElectraConfig = SetEncoderElectraModel.config_class
-SetEncoderRobertaConfig = SetEncoderRobertaModel.config_class
-
-
-class SetEncoderBertModule(CrossEncoderModule):
+class SetEncoderBertModule(SetEncoderModule):
     config_class = SetEncoderBertModel.config_class
 
     def __init__(
@@ -154,19 +135,8 @@ class SetEncoderBertModule(CrossEncoderModule):
                 raise ValueError("Incorrect model type. Expected SetEncoderBertModel.")
         super().__init__(model, loss_functions, evaluation_metrics)
 
-    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
-        num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
-        logits = self.model.forward(
-            batch.encoding.input_ids,
-            batch.encoding.get("attention_mask", None),
-            batch.encoding.get("token_type_ids", None),
-            num_docs=num_docs,
-        )
-        logits = logits.view(len(batch.query_ids), -1)
-        return logits
 
-
-class SetEncoderElectraModule(CrossEncoderModule):
+class SetEncoderElectraModule(SetEncoderModule):
     config_class = SetEncoderElectraConfig
 
     def __init__(
@@ -200,19 +170,8 @@ class SetEncoderElectraModule(CrossEncoderModule):
                 )
         super().__init__(model, loss_functions, evaluation_metrics)
 
-    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
-        num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
-        logits = self.model.forward(
-            batch.encoding.input_ids,
-            batch.encoding.get("attention_mask", None),
-            batch.encoding.get("token_type_ids", None),
-            num_docs=num_docs,
-        )
-        logits = logits.view(len(batch.query_ids), -1)
-        return logits
 
-
-class SetEncoderRobertaModule(CrossEncoderModule):
+class SetEncoderRobertaModule(SetEncoderModule):
     config_class = SetEncoderRobertaConfig
 
     def __init__(
@@ -245,17 +204,6 @@ class SetEncoderRobertaModule(CrossEncoderModule):
                     "Incorrect model type. Expected SetEncoderRobertaModel."
                 )
         super().__init__(model, loss_functions, evaluation_metrics)
-
-    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
-        num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
-        logits = self.model.forward(
-            batch.encoding.input_ids,
-            batch.encoding.get("attention_mask", None),
-            batch.encoding.get("token_type_ids", None),
-            num_docs=num_docs,
-        )
-        logits = logits.view(len(batch.query_ids), -1)
-        return logits
 
 
 AutoConfig.register(SetEncoderBertConfig.model_type, SetEncoderBertConfig)

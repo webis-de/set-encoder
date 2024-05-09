@@ -2,6 +2,7 @@ import re
 from argparse import ArgumentParser
 from pathlib import Path
 
+import torch
 import pandas as pd
 
 RUN_HEADER = ["query_id", "q0", "doc_id", "rank", "score", "system"]
@@ -46,9 +47,7 @@ def main(args=None):
         )
         sub_sample_run = sub_sample_run.loc[:, RUN_HEADER]
         file_name = args.rank_gpt_file.name
-        file_name = re.sub(
-            r"__sampled_\d+__", f"__sampled_{sub_sample_size}__", file_name
-        )
+        file_name = re.sub(r"sampled-\d+", f"sampled-{sub_sample_size}", file_name)
         sub_sample_run.to_csv(
             args.rank_gpt_file.with_name(file_name),
             sep="\t",
