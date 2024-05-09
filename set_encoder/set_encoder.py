@@ -1,6 +1,6 @@
-from typing import Sequence, Type, Union
+from typing import Sequence, Type
 
-from lightning_ir.data.data import CrossEncoderTrainBatch
+from lightning_ir.data.data import CrossEncoderRunBatch
 import torch
 from lightning_ir.cross_encoder.model import CrossEncoderConfig, CrossEncoderModel
 from lightning_ir.cross_encoder.module import CrossEncoderModule
@@ -88,7 +88,7 @@ class Pooler(torch.nn.Module):
     def __init__(self, encoder: BertModel | ElectraModel | RobertaModel) -> None:
         super().__init__()
 
-    def forward(self, batch: CrossEncoderTrainBatch) -> torch.Tensor:
+    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
         logits = self.model.forward(
             batch.encoding.input_ids,
@@ -154,7 +154,7 @@ class SetEncoderBertModule(CrossEncoderModule):
                 raise ValueError("Incorrect model type. Expected SetEncoderBertModel.")
         super().__init__(model, loss_functions, evaluation_metrics)
 
-    def forward(self, batch: CrossEncoderTrainBatch) -> torch.Tensor:
+    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
         logits = self.model.forward(
             batch.encoding.input_ids,
@@ -200,7 +200,7 @@ class SetEncoderElectraModule(CrossEncoderModule):
                 )
         super().__init__(model, loss_functions, evaluation_metrics)
 
-    def forward(self, batch: CrossEncoderTrainBatch) -> torch.Tensor:
+    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
         logits = self.model.forward(
             batch.encoding.input_ids,
@@ -246,7 +246,7 @@ class SetEncoderRobertaModule(CrossEncoderModule):
                 )
         super().__init__(model, loss_functions, evaluation_metrics)
 
-    def forward(self, batch: CrossEncoderTrainBatch) -> torch.Tensor:
+    def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
         logits = self.model.forward(
             batch.encoding.input_ids,
