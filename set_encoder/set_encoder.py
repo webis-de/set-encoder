@@ -26,27 +26,28 @@ from set_encoder.set_encoder_mixin import SetEncoderMixin
 from set_encoder.set_encoder_roberta import RoBERTaSetEncoderMixin
 
 
-class SetEncoderConfig:
-    depth: int = 100
-    fill_random_docs: bool = True
-
-
 def SetEncoderClassFactory(
     TransformerModel: Type[PreTrainedModel],
 ) -> Type[PreTrainedModel]:
     Mixin = get_mixin(TransformerModel)
-    assert issubclass(TransformerModel.config_class, PretrainedConfig)
-    model_name = TransformerModel.config_class.__name__.replace("Config", "").replace(
-        "Mono", ""
-    )
+    config_class = TransformerModel.config_class
+    assert issubclass(config_class, PretrainedConfig)
+    model_name = config_class.__name__.replace("Config", "").replace("Mono", "")
+
+    def config_init(
+        self, *args, depth: int = 100, fill_random_docs: bool = True, **kwargs
+    ):
+        config_class.__init__(self, *args, **kwargs)
+        self.depth = depth
+        self.fill_random_docs = fill_random_docs
 
     ModelSetEncoderConfig = type(
         f"SetEncoder{model_name}Config",
-        (TransformerModel.config_class, SetEncoderConfig),
-        {"model_type": f"set-encoder-{model_name.lower()}"},
+        (config_class,),
+        {"__init__": config_init, "model_type": f"set-encoder-{model_name.lower()}"},
     )
 
-    def __init__(
+    def model_init(
         self,
         config: PretrainedConfig,
         use_flash: bool = True,
@@ -63,7 +64,7 @@ def SetEncoderClassFactory(
     set_encoder_class = type(
         f"SetEncoder{model_name}Model",
         (Mixin, TransformerModel),
-        {"__init__": __init__, "config_class": ModelSetEncoderConfig},
+        {"__init__": model_init, "config_class": ModelSetEncoderConfig},
     )
     return set_encoder_class
 
@@ -127,6 +128,12 @@ class SetEncoderBertModule(SetEncoderModule):
                     )
                 model = SetEncoderBertModel(config, use_flash=use_flash)
             else:
+                kwargs = {}
+                if config is not None:
+                    kwargs = config.to_added_args_dict()
+                config = SetEncoderBertConfig.from_pretrained(
+                    model_name_or_path, **kwargs
+                )
                 model = SetEncoderBertModel.from_pretrained(
                     model_name_or_path, config=config, use_flash=use_flash
                 )
@@ -160,6 +167,12 @@ class SetEncoderElectraModule(SetEncoderModule):
                     )
                 model = SetEncoderElectraModel(config, use_flash=use_flash)
             else:
+                kwargs = {}
+                if config is not None:
+                    kwargs = config.to_added_args_dict()
+                config = SetEncoderElectraConfig.from_pretrained(
+                    model_name_or_path, **kwargs
+                )
                 model = SetEncoderElectraModel.from_pretrained(
                     model_name_or_path, config=config, use_flash=use_flash
                 )
@@ -195,6 +208,12 @@ class SetEncoderRobertaModule(SetEncoderModule):
                     )
                 model = SetEncoderRobertaModel(config, use_flash=use_flash)
             else:
+                kwargs = {}
+                if config is not None:
+                    kwargs = config.to_added_args_dict()
+                config = SetEncoderRobertaConfig.from_pretrained(
+                    model_name_or_path, **kwargs
+                )
                 model = SetEncoderRobertaModel.from_pretrained(
                     model_name_or_path, config=config, use_flash=use_flash
                 )
