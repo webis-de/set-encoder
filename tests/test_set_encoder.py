@@ -1,12 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import pytest
 import torch
 from _pytest.fixtures import SubRequest
-from lightning_ir.cross_encoder.model import CrossEncoderConfig, CrossEncoderModel
-from lightning_ir.cross_encoder.module import CrossEncoderModule
+from lightning_ir.cross_encoder.model import CrossEncoderConfig
 from lightning_ir.data.datamodule import (
     LightningIRDataModule,
     RunDatasetConfig,
@@ -14,16 +13,10 @@ from lightning_ir.data.datamodule import (
 )
 from lightning_ir.loss.loss import (
     ConstantMarginMSE,
-    LossFunction,
     RankNet,
     SupervisedMarginMSE,
 )
-from transformers import (
-    AutoConfig,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    BertModel,
-)
+from transformers import AutoTokenizer
 
 from set_encoder.set_encoder import (
     SetEncoderBertModel,
@@ -32,7 +25,6 @@ from set_encoder.set_encoder import (
     SetEncoderElectraModule,
     SetEncoderRobertaModel,
     SetEncoderRobertaModule,
-    SetEncoderClassFactory,
 )
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -110,7 +102,7 @@ def tuples_datamodule(model: MODELS) -> LightningIRDataModule:
         train_batch_size=3,
         inference_batch_size=3,
         train_dataset="msmarco-passage/train/kd-docpairs",
-        train_dataset_config=TupleDatasetConfig(2),
+        train_dataset_config=TupleDatasetConfig("score", 2),
         inference_datasets=[
             str(DATA_DIR / "clueweb09-en-trec-web-2009-diversity.jsonl"),
             str(DATA_DIR / "msmarco-passage-trec-dl-2019-judged.run"),

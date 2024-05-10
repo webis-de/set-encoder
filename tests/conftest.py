@@ -3,13 +3,9 @@ from pathlib import Path
 import ir_datasets
 import pytest
 import transformers
+from lightning_ir.data.datamodule import LightningIRDataModule
+from lightning_ir.data.dataset import RunDataset
 from transformers import AutoTokenizer
-
-from set_encoder.data.datamodule import (
-    SetEncoderDataModule,
-    SetEncoderDataModule,
-    ListwiseDataset,
-)
 
 
 @pytest.fixture(scope="session")
@@ -51,8 +47,8 @@ def msmarco_passage_trec_dl_run_path(test_data_dir: Path) -> Path:
 def datamodule(
     msmarco_passage_trec_dl_run_path: Path,
     model_name: str,
-) -> SetEncoderDataModule:
-    datamodule = SetEncoderDataModule(
+) -> LightningIRDataModule:
+    datamodule = LightningIRDataModule(
         model_name_or_path=model_name,
         train_ir_dataset_paths=[msmarco_passage_trec_dl_run_path],
         val_ir_dataset_paths=[msmarco_passage_trec_dl_run_path],
@@ -71,8 +67,8 @@ def datamodule(
 def flash_datamodule(
     msmarco_passage_trec_dl_run_path: Path,
     model_name: str,
-) -> SetEncoderDataModule:
-    datamodule = SetEncoderDataModule(
+) -> LightningIRDataModule:
+    datamodule = LightningIRDataModule(
         model_name_or_path=model_name,
         train_ir_dataset_paths=[msmarco_passage_trec_dl_run_path],
         val_ir_dataset_paths=[msmarco_passage_trec_dl_run_path],
@@ -89,6 +85,6 @@ def flash_datamodule(
 
 @pytest.fixture(scope="session")
 def dataset(
-    datamodule: SetEncoderDataModule,
-) -> ListwiseDataset:
+    datamodule: LightningIRDataModule,
+) -> RunDataset:
     return datamodule.train_dataset
