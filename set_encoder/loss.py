@@ -51,7 +51,7 @@ class ApproxAlphaNDCG(ApproxLossFunction):
             idcs = gain.argmax(-1)
             optimal_ranks[torch.arange(batch_size), idcs] = r
             coverage += targets[torch.arange(batch_size), idcs].unsqueeze(1)
-            targets[torch.arange(batch_size), idcs] = 0
+            targets[torch.arange(batch_size), idcs] = -1
         return optimal_ranks
 
 
