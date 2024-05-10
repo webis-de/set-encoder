@@ -80,6 +80,7 @@ class ApproxERRIA(ApproxLossFunction):
         return loss.mean()
 
     def get_err_ia(self, ranks: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = targets.clamp(min=0)
         idcs = torch.argsort(ranks)
         ranks = torch.gather(ranks, 1, idcs)
         targets = torch.gather(targets, 1, idcs[..., None].expand_as(targets))
