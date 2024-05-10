@@ -100,7 +100,6 @@ class SetEncoderModule(CrossEncoderModule):
             batch.encoding.get("token_type_ids", None),
             num_docs=num_docs,
         )
-        logits = logits.view(len(batch.query_ids), -1)
         return logits
 
 
