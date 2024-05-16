@@ -54,13 +54,10 @@ class SetEncoderMixin(torch.nn.Module, ABC):
                     std = h_states.std(0, keepdim=True).expand(missing_docs, -1)
                 sampled_h_states = torch.normal(mean, std).to(h_states)
                 h_states = torch.cat([h_states, sampled_h_states])
-            for _ in range(num_docs[idx]):
-                repeated_other_doc_hidden_states.append(h_states)
-        other_doc_hidden_states = torch.nn.utils.rnn.pad_sequence(
-            repeated_other_doc_hidden_states,
-            batch_first=True,
-            padding_value=0,
-        )
+            repeated_other_doc_hidden_states.append(
+                h_states.unsqueeze(0).expand(num_docs[idx], -1, -1)
+            )
+        other_doc_hidden_states = torch.cat(repeated_other_doc_hidden_states)
         key_value_hidden_states = torch.cat(
             [hidden_states, other_doc_hidden_states], dim=1
         )
