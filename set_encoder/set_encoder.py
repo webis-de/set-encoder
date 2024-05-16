@@ -2,7 +2,7 @@ from typing import Sequence, Type
 
 import torch
 from lightning_ir.cross_encoder.model import CrossEncoderConfig, CrossEncoderModel
-from lightning_ir.cross_encoder.module import CrossEncoderModule
+from lightning_ir.cross_encoder.module import CrossEncoderModule, LightningIRModule
 from lightning_ir.cross_encoder.mono import (
     MonoBertModel,
     MonoElectraModel,
@@ -24,6 +24,7 @@ from set_encoder.set_encoder_bert import BertSetEncoderMixin
 from set_encoder.set_encoder_electra import ElectraSetEncoderMixin
 from set_encoder.set_encoder_mixin import SetEncoderMixin
 from set_encoder.set_encoder_roberta import RoBERTaSetEncoderMixin
+from set_encoder.tokenizer import SetEncoderTokenizer
 
 
 def SetEncoderClassFactory(
@@ -35,16 +36,31 @@ def SetEncoderClassFactory(
     model_name = config_class.__name__.replace("Config", "").replace("Mono", "")
 
     def config_init(
-        self, *args, depth: int = 100, fill_random_docs: bool = True, **kwargs
+        self,
+        *args,
+        depth: int = 100,
+        fill_random_docs: bool = True,
+        add_extra_token: bool = False,
+        **kwargs,
     ):
         config_class.__init__(self, *args, **kwargs)
         self.depth = depth
         self.fill_random_docs = fill_random_docs
+        self.add_extra_token = add_extra_token
 
     ModelSetEncoderConfig = type(
         f"SetEncoder{model_name}Config",
         (config_class,),
-        {"__init__": config_init, "model_type": f"set-encoder-{model_name.lower()}"},
+        {
+            "__init__": config_init,
+            "model_type": f"set-encoder-{model_name.lower()}",
+            "ADDED_ARGS": (
+                CrossEncoderConfig.ADDED_ARGS
+                + ["depth", "fill_random_docs", "add_extra_token"]
+            ),
+            "TOKENIZER_ARGS": (CrossEncoderConfig.TOKENIZER_ARGS + ["add_extra_token"]),
+            "Tokenizer": SetEncoderTokenizer,
+        },
     )
 
     def model_init(
@@ -59,6 +75,7 @@ def SetEncoderClassFactory(
             TransformerModel.forward,
             use_flash,
             config.depth if config.fill_random_docs else None,
+            config.add_extra_token,
         )
 
     set_encoder_class = type(
@@ -91,6 +108,19 @@ SetEncoderRobertaConfig = SetEncoderRobertaModel.config_class
 
 
 class SetEncoderModule(CrossEncoderModule):
+
+    def __init__(
+        self,
+        model: CrossEncoderModel,
+        loss_functions: Sequence[LossFunction] | None = None,
+        evaluation_metrics: Sequence[str] | None = None,
+    ):
+        super().__init__(model, loss_functions, evaluation_metrics)
+        if (
+            self.config.add_extra_token
+            and len(self.tokenizer) != self.config.vocab_size
+        ):
+            self.model.encoder.resize_token_embeddings(len(self.tokenizer), 8)
 
     def forward(self, batch: CrossEncoderRunBatch) -> torch.Tensor:
         num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]

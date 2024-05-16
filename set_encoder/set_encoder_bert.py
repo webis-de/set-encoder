@@ -26,8 +26,9 @@ class BertSetEncoderMixin(SetEncoderMixin):
         ],
         use_flash: bool,
         depth: int | None,
+        add_extra_token: bool,
     ) -> None:
-        super().__init__(original_forward, use_flash, depth)
+        super().__init__(original_forward, use_flash, depth, add_extra_token)
         self.base_encoder.get_extended_attention_mask = (
             self.extended_attention_mask_wrapper(
                 self.base_encoder.get_extended_attention_mask

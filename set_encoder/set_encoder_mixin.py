@@ -17,10 +17,12 @@ class SetEncoderMixin(torch.nn.Module, ABC):
         ],
         use_flash: bool,
         depth: int | None,
+        add_extra_token: bool,
     ) -> None:
         self.original_forward = original_forward
         self.use_flash = use_flash
         self.depth = depth
+        self.add_extra_token = add_extra_token
 
     def forward(self, *args, num_docs: List[int] | None = None, **kwargs):
         attention_forward = (
@@ -42,7 +44,8 @@ class SetEncoderMixin(torch.nn.Module, ABC):
         hidden_states: torch.Tensor,
         num_docs: List[int],
     ) -> torch.Tensor:
-        split_other_doc_hidden_states = torch.split(hidden_states[:, 0], num_docs)
+        idx = 1 if self.add_extra_token else 0
+        split_other_doc_hidden_states = torch.split(hidden_states[:, idx], num_docs)
         repeated_other_doc_hidden_states = []
         for idx, h_states in enumerate(split_other_doc_hidden_states):
             missing_docs = 0 if self.depth is None else self.depth - num_docs[idx]

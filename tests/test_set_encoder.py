@@ -1,4 +1,5 @@
 from functools import lru_cache
+from itertools import product
 from pathlib import Path
 from typing import Union
 
@@ -6,17 +7,9 @@ import pytest
 import torch
 from _pytest.fixtures import SubRequest
 from lightning_ir.cross_encoder.model import CrossEncoderConfig
-from lightning_ir.data.datamodule import (
-    LightningIRDataModule,
-    RunDatasetConfig,
-    TupleDatasetConfig,
-)
-from lightning_ir.loss.loss import (
-    ConstantMarginMSE,
-    RankNet,
-    SupervisedMarginMSE,
-)
-from transformers import AutoTokenizer
+from lightning_ir.data.datamodule import LightningIRDataModule
+from lightning_ir.data.dataset import RunDataset, TupleDataset
+from lightning_ir.loss.loss import RankNet, SupervisedMarginMSE
 
 from set_encoder.set_encoder import (
     SetEncoderBertModel,
@@ -26,6 +19,7 @@ from set_encoder.set_encoder import (
     SetEncoderRobertaModel,
     SetEncoderRobertaModule,
 )
+from set_encoder.tokenizer import SetEncoderTokenizer
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -46,29 +40,35 @@ MODEL_NAME_OR_PATH_MAP = {
 }
 
 
-@pytest.fixture(scope="module", params=list(MODULE_MAP.keys()))
+@pytest.fixture(scope="module", params=product(list(MODULE_MAP.keys()), [True, False]))
 def model(request: SubRequest) -> MODELS:
-    Model = request.param
-    model_name_or_path = MODEL_NAME_OR_PATH_MAP[request.param]
-    config = Model.config_class.from_pretrained(model_name_or_path, num_hidden_layers=1)
+    Model, add_extra_token = request.param
+    model_name_or_path = MODEL_NAME_OR_PATH_MAP[Model]
+    config = Model.config_class.from_pretrained(
+        model_name_or_path, num_hidden_layers=1, add_extra_token=add_extra_token
+    )
     _model = Model.from_pretrained(model_name_or_path, config=config)
+    if config.add_extra_token:
+        _model.encoder.resize_token_embeddings(_model.config.vocab_size + 1, 8)
     return _model
 
 
 @pytest.fixture(
     scope="module",
-    params=[ConstantMarginMSE(), RankNet(), SupervisedMarginMSE()],
+    params=[RankNet(), SupervisedMarginMSE()],
 )
 def module(model: MODELS, request: SubRequest) -> MODULES:
     loss_function = request.param
-    module = MODULE_MAP[type(model)](
+    _module = MODULE_MAP[type(model)](
         model, loss_functions=[loss_function], evaluation_metrics=["nDCG@10", "loss"]
     )
-    return module
+    return _module
 
 
 def test_doc_order_invariance(model: MODELS) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(model.config.name_or_path)
+    tokenizer = SetEncoderTokenizer.from_pretrained(
+        model.config.name_or_path, **model.config.to_tokenizer_dict()
+    )
 
     queries = [
         "What is the meaning of life?",
@@ -95,21 +95,29 @@ def test_doc_order_invariance(model: MODELS) -> None:
 
 @lru_cache
 def tuples_datamodule(model: MODELS) -> LightningIRDataModule:
+    inference_datasets = [
+        RunDataset(
+            run_path,
+            depth=10,
+            sample_size=10,
+            sampling_strategy="top",
+            targets="relevance",
+        )
+        for run_path in [
+            DATA_DIR / "clueweb09-en-trec-web-2009-diversity.jsonl",
+            DATA_DIR / "msmarco-passage-trec-dl-2019-judged.run",
+        ]
+    ]
     datamodule = LightningIRDataModule(
         model_name_or_path=model.config.name_or_path,
         config=model.config,
         num_workers=0,
         train_batch_size=3,
         inference_batch_size=3,
-        train_dataset="msmarco-passage/train/kd-docpairs",
-        train_dataset_config=TupleDatasetConfig("score", 2),
-        inference_datasets=[
-            str(DATA_DIR / "clueweb09-en-trec-web-2009-diversity.jsonl"),
-            str(DATA_DIR / "msmarco-passage-trec-dl-2019-judged.run"),
-        ],
-        inference_dataset_config=RunDatasetConfig(
-            "relevance", depth=10, sample_size=10, sampling_strategy="top"
+        train_dataset=TupleDataset(
+            "msmarco-passage/train/kd-docpairs", targets="score", num_docs=2
         ),
+        inference_datasets=inference_datasets,
     )
     datamodule.setup(stage="fit")
     return datamodule
@@ -117,8 +125,6 @@ def tuples_datamodule(model: MODELS) -> LightningIRDataModule:
 
 def test_training_step(module: MODULES):
     datamodule = tuples_datamodule(module.model)
-    if not isinstance(datamodule.config, CrossEncoderConfig):
-        pytest.skip()
     dataloader = datamodule.train_dataloader()
     batch = next(iter(dataloader))
     loss = module.training_step(batch, 0)
@@ -127,8 +133,6 @@ def test_training_step(module: MODULES):
 
 def test_validation(module: MODULES):
     datamodule = tuples_datamodule(module.model)
-    if not isinstance(datamodule.config, CrossEncoderConfig):
-        pytest.skip()
     dataloader = datamodule.val_dataloader()[0]
     for batch, batch_idx in zip(dataloader, range(2)):
         module.validation_step(batch, batch_idx, 0)
