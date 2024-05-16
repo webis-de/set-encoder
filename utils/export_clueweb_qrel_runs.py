@@ -31,10 +31,10 @@ def main(args=None):
         2014: "clueweb12/trec-web-2014/diversity",
     }
 
-    docs = ir_datasets.load("clueweb09/en").docs_store()
     for year in tqdm(years):
         pattern = year_to_pattern[year]
         dataset = ir_datasets.load(pattern)
+        docs = dataset.docs_store()
         output_path = (
             args.output_dir / f"{dataset._dataset_id.replace('/', '-')}.jsonl.gz"
         )
@@ -61,6 +61,8 @@ def main(args=None):
                     "text": doc.default_text(),
                     "rank": 1,
                     "score": 0,
+                    "relevance": qrel.relevance,
+                    "iteration": qrel.subtopic_id,
                 }
                 f.write(json.dumps(data) + "\n")
 

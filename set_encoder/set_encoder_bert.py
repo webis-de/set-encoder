@@ -67,21 +67,8 @@ class BertSetEncoderMixin(SetEncoderMixin):
             num_docs: List[int] | None = None,
         ):
             if num_docs is not None:
-                if self.depth is None:
-                    max_num_docs = max(num_docs)
-                else:
-                    max_num_docs = self.depth
-                other_doc_mask = torch.zeros(
-                    input_shape[0], max_num_docs, device=device, dtype=torch.bool
-                )
-                cum_idx = 0
-                for n in num_docs:
-                    other_doc_mask[cum_idx : cum_idx + n, n:] = True
-                    cum_idx += n
-                eye = torch.eye(max_num_docs, device=device).bool()
-                repeated_same_doc_mask = [eye[:n] for n in num_docs]
-                same_doc_mask = torch.cat(repeated_same_doc_mask)
-                other_doc_attention_mask = ~(other_doc_mask | same_doc_mask)
+                eye = (1 - torch.eye(self.depth, device=device)).long()
+                other_doc_attention_mask = torch.cat([eye[:n] for n in num_docs])
                 attention_mask = torch.cat(
                     [attention_mask, other_doc_attention_mask.to(attention_mask)],
                     dim=-1,

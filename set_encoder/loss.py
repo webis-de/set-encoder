@@ -1,5 +1,56 @@
 import torch
-from lightning_ir.loss.loss import ApproxLossFunction
+from lightning_ir.loss.loss import ApproxLossFunction, ApproxRankMSE, ApproxMRR
+
+
+class SortedApproxRankMSE(ApproxRankMSE):
+
+    def compute_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        approx_ranks = self.get_approx_ranks(logits, self.temperature)
+        ranks = torch.arange(logits.shape[1], device=logits.device) + 1
+        ranks = ranks.expand_as(approx_ranks)
+        loss = torch.nn.functional.mse_loss(
+            approx_ranks, ranks.to(approx_ranks), reduction="none"
+        )
+        if self.discount == "log2":
+            weight = 1 / torch.log2(ranks + 1)
+        elif self.discount == "reciprocal":
+            weight = 1 / ranks
+        else:
+            weight = 1
+        loss = loss * weight
+        loss = loss.mean()
+        return loss
+
+
+class SubtopicMeanMinRank(ApproxLossFunction):
+
+    def compute_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = self.process_targets(logits, targets)
+        approx_ranks = self.get_approx_ranks(logits, self.temperature)
+        expanded_approx_ranks = (
+            torch.nn.functional.one_hot(targets) * approx_ranks[..., None]
+        )
+        expanded_approx_ranks = expanded_approx_ranks.masked_fill(
+            expanded_approx_ranks == 0, 10_000
+        )
+        loss = expanded_approx_ranks.min(1).values.mean()
+        return loss
+
+
+class SupervisedSubtopicMeanMinRank(ApproxLossFunction):
+
+    def compute_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = self.process_targets(logits, targets)
+        approx_ranks = self.get_approx_ranks(logits, self.temperature)
+        min_subtopic_ranks = (
+            (targets[..., None] == torch.arange(targets.max(), device=targets.device))
+            .logical_not()
+            .long()
+            .argmin(1)
+        )
+        min_ranks = torch.gather(approx_ranks, 1, min_subtopic_ranks)
+        loss = min_ranks.mean()
+        return loss
 
 
 class ApproxAlphaNDCG(ApproxLossFunction):
