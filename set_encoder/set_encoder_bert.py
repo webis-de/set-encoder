@@ -5,6 +5,7 @@ from typing import Callable, List, Tuple
 import torch
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 from transformers.models.bert.modeling_bert import BertSelfAttention
+from lightning_ir.cross_encoder.model import CrossEncoderConfig
 
 from .set_encoder_mixin import SetEncoderMixin
 
@@ -20,15 +21,14 @@ class BertSetEncoderMixin(SetEncoderMixin):
 
     def __init__(
         self,
+        config: CrossEncoderConfig,
         original_forward: Callable[
             ...,
             Tuple[torch.Tensor] | BaseModelOutputWithPoolingAndCrossAttentions,
         ],
         use_flash: bool,
-        depth: int | None,
-        add_extra_token: bool,
     ) -> None:
-        super().__init__(original_forward, use_flash, depth, add_extra_token)
+        super().__init__(config, original_forward, use_flash)
         self.base_encoder.get_extended_attention_mask = (
             self.extended_attention_mask_wrapper(
                 self.base_encoder.get_extended_attention_mask
@@ -67,7 +67,7 @@ class BertSetEncoderMixin(SetEncoderMixin):
             num_docs: List[int] | None = None,
         ):
             if num_docs is not None:
-                eye = (1 - torch.eye(self.depth, device=device)).long()
+                eye = (1 - torch.eye(self.config.depth, device=device)).long()
                 other_doc_attention_mask = torch.cat([eye[:n] for n in num_docs])
                 attention_mask = torch.cat(
                     [attention_mask, other_doc_attention_mask.to(attention_mask)],
