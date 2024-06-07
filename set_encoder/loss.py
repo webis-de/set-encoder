@@ -1,5 +1,5 @@
 import torch
-from lightning_ir.loss.loss import ApproxLossFunction, ApproxRankMSE, ApproxMRR
+from lightning_ir.loss.loss import ApproxLossFunction, ApproxRankMSE
 
 
 class SortedApproxRankMSE(ApproxRankMSE):
