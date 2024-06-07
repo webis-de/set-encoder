@@ -39,14 +39,14 @@ def SetEncoderClassFactory(
         self,
         *args,
         depth: int = 100,
-        fill_random_docs: bool = True,
         add_extra_token: bool = False,
+        other_sequence_embedding: bool = False,
         **kwargs,
     ):
         config_class.__init__(self, *args, **kwargs)
         self.depth = depth
-        self.fill_random_docs = fill_random_docs
         self.add_extra_token = add_extra_token
+        self.other_sequence_embedding = other_sequence_embedding
 
     ModelSetEncoderConfig = type(
         f"SetEncoder{model_name}Config",
@@ -56,7 +56,7 @@ def SetEncoderClassFactory(
             "model_type": f"set-encoder-{model_name.lower()}",
             "ADDED_ARGS": (
                 CrossEncoderConfig.ADDED_ARGS
-                + ["depth", "fill_random_docs", "add_extra_token"]
+                + ["depth", "add_extra_token", "other_sequence_embedding"]
             ),
             "TOKENIZER_ARGS": (CrossEncoderConfig.TOKENIZER_ARGS + ["add_extra_token"]),
             "Tokenizer": SetEncoderTokenizer,
@@ -68,15 +68,8 @@ def SetEncoderClassFactory(
         config: PretrainedConfig,
         use_flash: bool = True,
     ) -> None:
-        config.num_labels = 1
         TransformerModel.__init__(self, config)
-        Mixin.__init__(
-            self,
-            TransformerModel.forward,
-            use_flash,
-            config.depth if config.fill_random_docs else None,
-            config.add_extra_token,
-        )
+        Mixin.__init__(self, config, TransformerModel.forward, use_flash)
 
     set_encoder_class = type(
         f"SetEncoder{model_name}Model",
