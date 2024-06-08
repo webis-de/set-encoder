@@ -1,5 +1,14 @@
 import torch
-from lightning_ir.loss.loss import ApproxLossFunction, ApproxRankMSE, ApproxMRR
+from lightning_ir.loss.loss import (
+    ApproxLossFunction,
+    ApproxRankMSE,
+    LossFunction,
+    PairwiseLossFunction,
+)
+from set_encoder.data import register_trec_dl_novelty, register_trec_dl_subtopics
+
+register_trec_dl_novelty()
+register_trec_dl_subtopics()
 
 
 class SortedApproxRankMSE(ApproxRankMSE):
@@ -51,6 +60,72 @@ class SupervisedSubtopicMeanMinRank(ApproxLossFunction):
         min_ranks = torch.gather(approx_ranks, 1, min_subtopic_ranks)
         loss = min_ranks.mean()
         return loss
+
+
+class DuplicateAwareRankNet(PairwiseLossFunction):
+
+    def compute_loss(self, scores: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        subtopic_ids = torch.nonzero(targets)[:, 2].view_as(scores)
+        targets = targets.max(-1).values
+        max_subtopic = int(subtopic_ids.max().item())
+        in_subtopic = subtopic_ids[..., None] == torch.arange(
+            max_subtopic + 1, device=scores.device
+        ).view(1, 1, -1)
+        subtopic_max_scores = torch.scatter_reduce(
+            torch.zeros(scores.shape[0], max_subtopic + 1).to(scores),
+            1,
+            subtopic_ids,
+            scores,
+            "amax",
+            include_self=False,
+        )
+        subtopic_max_target = torch.scatter_reduce(
+            torch.zeros(scores.shape[0], max_subtopic + 1).to(targets),
+            1,
+            subtopic_ids,
+            targets,
+            "amax",
+            include_self=False,
+        )
+        is_subtopic_max_score = in_subtopic & (
+            scores.unsqueeze(-1) == subtopic_max_scores
+        )
+        is_subtopic_non_max_score = in_subtopic & (
+            scores.unsqueeze(-1) < subtopic_max_scores
+        )
+        da_targets = targets.clone()
+        # replace all non-max scores per "subtopic" with 0
+        da_targets[is_subtopic_non_max_score.any(-1)] = 0
+        # replace the max score per "subtopic" with the highest target per subtopic
+        da_targets[is_subtopic_max_score.any(-1)] = subtopic_max_target[
+            is_subtopic_max_score.any(1)
+        ][subtopic_ids[is_subtopic_max_score.any(-1)]]
+
+        # ranknet
+        query_idcs, pos_idcs, neg_idcs = self.get_pairwise_idcs(da_targets)
+        pos = scores[query_idcs, pos_idcs]
+        neg = scores[query_idcs, neg_idcs]
+        margin = pos - neg
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            margin, torch.ones_like(margin)
+        )
+        return loss
+
+
+class RepeatLossFunction(LossFunction):
+    pass
+
+
+class RepeatCrossEntropyLoss(RepeatLossFunction):
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def compute_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        pos_weight = torch.tensor((logits.shape[1] - 2) / 2).to(logits.device)
+        return torch.nn.functional.binary_cross_entropy_with_logits(
+            logits, targets, pos_weight=pos_weight
+        )
 
 
 class ApproxAlphaNDCG(ApproxLossFunction):
