@@ -45,7 +45,7 @@ def model(request: SubRequest) -> MODELS:
     Model, add_extra_token = request.param
     model_name_or_path = MODEL_NAME_OR_PATH_MAP[Model]
     config = Model.config_class.from_pretrained(
-        model_name_or_path, num_hidden_layers=1, add_extra_token=add_extra_token
+        model_name_or_path, num_hidden_layers=2, add_extra_token=add_extra_token
     )
     _model = Model.from_pretrained(model_name_or_path, config=config)
     if config.add_extra_token:
@@ -70,27 +70,24 @@ def test_doc_order_invariance(model: MODELS) -> None:
         model.config.name_or_path, **model.config.to_tokenizer_dict()
     )
 
+    _docs = [
+        "The meaning of life is to be happy.",
+        "I don't know what the meaning of life is.",
+        "Death is meaningless.",
+        "Death is meaningless.",
+        "Foo bla bar." * 10,
+    ]
+    docs = _docs + _docs[::-1]
     queries = [
         "What is the meaning of life?",
-        "What is the meaning of life?",
-        "What is the meaning of death?",
-    ] * 2
-    docs = [
-        "The meaning of life is to be happy.",
-        "I don't know what the meaning of life is.",
-        "Death is meaningless.",
-        "I don't know what the meaning of life is.",
-        "The meaning of life is to be happy.",
-        "Death is meaningless.",
-    ]
-    num_docs = [2, 1] * 2
+    ] * len(docs)
+    num_docs = [len(_docs)] * 2
     encoded = tokenizer(queries, docs, return_tensors="pt", padding=True)
     with torch.no_grad():
         output = model(**encoded, num_docs=num_docs)
-    logits_1 = output[: len(queries) // 2]
-    logits_2 = output[len(queries) // 2 :]
-    logits_2[:2] = logits_2[:2].flip(0)
-    assert torch.allclose(logits_1, logits_2, atol=1e-4, rtol=1e-4)
+    scores_1 = output.scores[: len(queries) // 2]
+    scores_2 = output.scores[len(queries) // 2 :].flip(0)
+    assert torch.allclose(scores_1, scores_2, atol=1e-4, rtol=1e-4)
 
 
 @lru_cache
