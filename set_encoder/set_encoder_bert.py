@@ -1,4 +1,3 @@
-import math
 from functools import partial, wraps
 from typing import Callable, List, Tuple
 
@@ -26,9 +25,8 @@ class BertSetEncoderMixin(SetEncoderMixin):
             ...,
             Tuple[torch.Tensor] | BaseModelOutputWithPoolingAndCrossAttentions,
         ],
-        use_flash: bool,
     ) -> None:
-        super().__init__(config, original_forward, use_flash)
+        super().__init__(config, original_forward)
         self.base_encoder.get_extended_attention_mask = (
             self.extended_attention_mask_wrapper(
                 self.base_encoder.get_extended_attention_mask
@@ -68,6 +66,8 @@ class BertSetEncoderMixin(SetEncoderMixin):
         ):
             if num_docs is not None:
                 eye = (1 - torch.eye(self.config.depth, device=device)).long()
+                if not self.config.sample_missing_docs:
+                    eye = eye[:, : max(num_docs)]
                 other_doc_attention_mask = torch.cat([eye[:n] for n in num_docs])
                 attention_mask = torch.cat(
                     [attention_mask, other_doc_attention_mask.to(attention_mask)],
@@ -80,7 +80,7 @@ class BertSetEncoderMixin(SetEncoderMixin):
 
         return partial(wrapper, self)
 
-    def flash_attention_forward(
+    def attention_forward(
         _self,
         self: BertSelfAttention,
         hidden_states: torch.Tensor,
@@ -129,46 +129,3 @@ class BertSetEncoderMixin(SetEncoderMixin):
         new_context_shape = context.size()[:-2] + (self.all_head_size,)
         context = context.view(new_context_shape)
         return (context,)
-
-    def attention_forward(
-        _self,
-        self: BertSelfAttention,
-        hidden_states: torch.Tensor,
-        attention_mask: torch.FloatTensor | None = None,
-        *args,
-        output_attentions: bool | None = False,
-        num_docs: List[int] | None = None,
-        **kwargs,
-    ) -> Tuple[torch.Tensor]:
-        key_value_hidden_states = hidden_states
-        if num_docs is not None:
-            key_value_hidden_states = _self.cat_other_doc_hidden_states(
-                hidden_states, num_docs
-            )
-        query = self.transpose_for_scores(self.query(hidden_states))
-        key = self.transpose_for_scores(self.key(key_value_hidden_states))
-        value = self.transpose_for_scores(self.value(key_value_hidden_states))
-
-        attention_scores = torch.matmul(query, key.transpose(-1, -2))
-
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            attention_scores = attention_scores + attention_mask
-
-        # Normalize the attention scores to probabilities.
-        attention_probs = torch.nn.functional.softmax(attention_scores, dim=-1)
-
-        attention_probs = self.dropout(attention_probs)
-
-        context_layer = torch.matmul(attention_probs, value)
-
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(new_context_layer_shape)
-
-        outputs = (
-            (context_layer, attention_probs) if output_attentions else (context_layer,)
-        )
-
-        return outputs

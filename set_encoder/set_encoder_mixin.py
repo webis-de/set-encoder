@@ -17,26 +17,19 @@ class SetEncoderMixin(torch.nn.Module, ABC):
             ...,
             Tuple[torch.Tensor] | BaseModelOutputWithPoolingAndCrossAttentions,
         ],
-        use_flash: bool,
     ) -> None:
         self.original_forward = original_forward
-        self.use_flash = use_flash
         self.config = config
         self.other_sequence_embedding = None
         if self.config.other_sequence_embedding:
             self.other_sequence_embedding = torch.nn.Embedding(1, config.hidden_size)
 
     def forward(self, *args, num_docs: List[int] | None = None, **kwargs):
-        attention_forward = (
-            self.flash_attention_forward if self.use_flash else self.attention_forward
-        )
+        attention_forward = self.attention_forward
         for name, module in self.named_modules():
             if name.endswith(self.self_attention_pattern):
                 module.forward = partial(attention_forward, module, num_docs=num_docs)
         return self.original_forward(self, *args, **kwargs)
-
-    @abstractmethod
-    def flash_attention_forward(*args, **kwargs): ...
 
     @abstractmethod
     def attention_forward(*args, **kwargs): ...
@@ -53,7 +46,7 @@ class SetEncoderMixin(torch.nn.Module, ABC):
             missing_docs = (
                 0 if self.config.depth is None else self.config.depth - num_docs[idx]
             )
-            if missing_docs:
+            if missing_docs and self.config.sample_missing_docs:
                 mean = h_states.mean(0, keepdim=True).expand(missing_docs, -1)
                 if num_docs[idx] == 1:
                     std = torch.zeros_like(mean)
