@@ -13,8 +13,6 @@ from colbert import Indexer as ColBERTIndexer
 from colbert.data import Queries
 from colbert.infra import ColBERTConfig, Run, RunConfig
 
-from ir_dataset_utils import get_base
-
 
 def load_collection(
     dataset: ir_datasets.Dataset, doc_fields: Optional[List[str]]
@@ -250,7 +248,7 @@ def main(args=None):
             print(f"run file {run_file} already exists, skipping")
             continue
         dataset = ir_datasets.load(dataset_name)
-        dataset_base = get_base(dataset_name)
+        dataset_base = ir_datasets.docs_parent_id(dataset_name)
 
         context = None
         index_dir = args.index_dir / args.searcher
