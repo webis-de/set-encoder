@@ -143,4 +143,4 @@ log*.txt
 /scripts
 logs
 debug-*.yaml
-/experiments
+/experiments*
