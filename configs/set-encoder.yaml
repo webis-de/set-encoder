@@ -2,12 +2,18 @@ model:
   class_path: set_encoder.set_encoder.SetEncoderElectraModule
   init_args:
     model_name_or_path: google/electra-base-discriminator
-    depth: 100
-    other_doc_attention: true
-    freeze_position_embeddings: true
-    loss_function:
-      class_path: LocalizedContrastive
-      # class_path: RankNet
+    # model_name_or_path: google/electra-large-discriminator
+    repeat_linear_layer: false
+    config:
+      class_path: set_encoder.set_encoder.SetEncoderElectraConfig
       init_args:
-        reduction: mean
-    compile_model: true
+        query_length: 32
+        doc_length: 256
+        depth: 100
+        add_extra_token: false
+        other_sequence_embedding: false
+        sample_missing_docs: true
+    loss_functions:
+      - class_path: LocalizedContrastiveEstimation
+      # - class_path: set_encoder.loss.RepeatCrossEntropyLoss
+      # - class_path: set_encoder.loss.DuplicateAwareRankNet

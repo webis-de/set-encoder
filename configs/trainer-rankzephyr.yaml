@@ -10,13 +10,13 @@ trainer:
     class_path: CustomWandbLogger
     init_args:
       name: null
-      save_dir: experiments/listformer
+      save_dir: experiments
       version: null
       offline: false
       dir: null
       id: null
       anonymous: null
-      project: listformer
+      project: set-encoder
       log_model: false
       experiment: null
       prefix: ''
@@ -33,18 +33,14 @@ trainer:
         save_weights_only: false
         mode: min
         auto_insert_metric_name: true
-        every_n_train_steps: 50000
+        every_n_train_steps: null
         train_time_interval: null
         every_n_epochs: null
         save_on_train_epoch_end: true
-    - class_path: LearningRateMonitor
-      init_args:
-        logging_interval: step
-        log_momentum: false
   fast_dev_run: false
-  max_epochs: null
+  max_epochs: 20
   min_epochs: null
-  max_steps: 50000
+  max_steps: -1
   min_steps: null
   max_time: null
   limit_train_batches: null
@@ -52,15 +48,15 @@ trainer:
   limit_test_batches: null
   limit_predict_batches: null
   overfit_batches: 0.0
-  val_check_interval: 10000
+  val_check_interval: 1600
   check_val_every_n_epoch: null
   num_sanity_val_steps: 2
-  log_every_n_steps: null
+  log_every_n_steps: 10
   enable_checkpointing: null
   enable_progress_bar: null
   enable_model_summary: null
-  accumulate_grad_batches: 2
-  gradient_clip_val: 10
+  accumulate_grad_batches: 32
+  gradient_clip_val: 0.5
   gradient_clip_algorithm: null
   deterministic: null
   benchmark: null

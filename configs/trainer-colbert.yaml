@@ -1,0 +1,44 @@
+# pytorch_lightning==2.0.0
+seed_everything: 42
+trainer:
+  accelerator: auto
+  strategy: auto
+  devices: auto
+  num_nodes: 1
+  precision: bf16-mixed
+  logger:
+    class_path: CustomWandbLogger
+    init_args:
+      name: null
+      save_dir: experiments
+      version: null
+      offline: false
+      dir: null
+      id: null
+      anonymous: null
+      project: set-encoder
+      log_model: false
+      experiment: null
+      prefix: ""
+      checkpoint_name: null
+  callbacks:
+    - class_path: ModelCheckpoint
+      init_args:
+        dirpath: null
+        filename: null
+        monitor: null
+        verbose: false
+        save_last: null
+        save_top_k: 1
+        save_weights_only: false
+        mode: min
+        auto_insert_metric_name: true
+        every_n_train_steps: 10000
+        train_time_interval: null
+        every_n_epochs: null
+        save_on_train_epoch_end: true
+  max_steps: 60000
+  val_check_interval: 2000
+  accumulate_grad_batches: 2
+  gradient_clip_algorithm: null
+  gradient_clip_val: 10

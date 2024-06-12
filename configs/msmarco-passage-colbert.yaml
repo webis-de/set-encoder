@@ -1,18 +1,29 @@
 data:
-  train_ir_dataset_paths:
-    - data/baseline-runs/colbert/msmarco-passage-train-judged.run
-  truncate: true
-  max_length: 256
-  batch_size: 16
-  val_batch_size: 10
-  predict_batch_size: 1
-  train_sample_size: 8
-  train_sample_depth: 200
-  depth: 100
-  num_relevant_samples: 1
-  min_num_relevant_samples: 0
-  shuffle_queries: true
-  shuffle_docs: false
-  relevant_sampling_strategy: random
-  non_relevant_sampling_strategy: random
-  num_workers: 2
+  class_path: LightningIRDataModule
+  init_args:
+    num_workers: 4
+    train_batch_size: 4
+    inference_batch_size: 4
+    train_dataset:
+      class_path: RunDataset
+      init_args:
+        run_path: data/baseline-runs/colbert/msmarco-passage-train-judged.parquet
+        targets: relevance
+        depth: 200
+        sample_size: 8
+        sampling_strategy: single_relevant
+    inference_datasets:
+      - class_path: RunDataset
+        init_args:
+          run_path: data/baseline-runs/bm25/msmarco-passage-v2-trec-dl-2021-judged.run
+          targets: relevance
+          depth: 100
+          sample_size: 100
+          sampling_strategy: top
+      - class_path: RunDataset
+        init_args:
+          run_path: data/baseline-runs/bm25/msmarco-passage-v2-trec-dl-2022-judged.run
+          targets: relevance
+          depth: 100
+          sample_size: 100
+          sampling_strategy: top
