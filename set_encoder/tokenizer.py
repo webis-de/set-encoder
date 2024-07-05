@@ -1,4 +1,4 @@
-from lightning_ir.tokenizer.tokenizer import CrossEncoderTokenizer
+from lightning_ir.cross_encoder import CrossEncoderTokenizer
 from tokenizers.processors import TemplateProcessing
 from transformers import PreTrainedTokenizerBase
 

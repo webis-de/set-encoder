@@ -1,154 +1,174 @@
-from dataclasses import dataclass
-from typing import Dict, Sequence, Type
+from functools import partial
+from typing import Dict, Sequence, Tuple
 
 import torch
-from lightning_ir.cross_encoder.model import (
+from lightning_ir import (
     CrossEncoderConfig,
     CrossEncoderModel,
-    CrossEncoderOuput,
+    CrossEncoderModule,
+    CrossEncoderOutput,
+    TrainBatch,
 )
-from lightning_ir.cross_encoder.module import CrossEncoderModule
-from lightning_ir.cross_encoder.mono import (
-    MonoBertModel,
-    MonoElectraModel,
-    MonoRobertaModel,
-)
-from lightning_ir.data.data import CrossEncoderRunBatch
+from lightning_ir.data import RankBatch
 from lightning_ir.loss.loss import LossFunction
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    BertPreTrainedModel,
-    ElectraPreTrainedModel,
-    PretrainedConfig,
-    PreTrainedModel,
-    RobertaPreTrainedModel,
-)
+from transformers import AutoConfig, AutoModel, BatchEncoding
 
-from set_encoder.set_encoder_bert import BertSetEncoderMixin
-from set_encoder.set_encoder_electra import ElectraSetEncoderMixin
-from set_encoder.set_encoder_mixin import SetEncoderMixin
-from set_encoder.set_encoder_roberta import RoBERTaSetEncoderMixin
-from set_encoder.tokenizer import SetEncoderTokenizer
-from set_encoder.loss import RepeatLossFunction
-from set_encoder.data import register_trec_dl_novelty, register_trec_dl_subtopics
-
-register_trec_dl_subtopics()
-register_trec_dl_novelty()
+from .loss import RepeatLossFunction
+from .tokenizer import SetEncoderTokenizer
 
 
-def SetEncoderClassFactory(
-    TransformerModel: Type[PreTrainedModel],
-) -> Type[PreTrainedModel]:
-    Mixin = get_mixin(TransformerModel)
-    config_class = TransformerModel.config_class
-    assert issubclass(config_class, PretrainedConfig)
-    model_name = config_class.__name__.replace("Config", "").replace("Mono", "")
+class SetEncoderConfig(CrossEncoderConfig):
+    model_type = "set-encoder"
+    tokenizer_class = SetEncoderTokenizer
 
-    def config_init(
+    ADDED_ARGS = CrossEncoderConfig.ADDED_ARGS.union(
+        {"depth", "add_extra_token", "sample_missing_docs"}
+    )
+    TOKENIZER_ARGS = CrossEncoderConfig.TOKENIZER_ARGS.union({"add_extra_token"})
+
+    def __init__(
         self,
         *args,
         depth: int = 100,
         add_extra_token: bool = False,
-        other_sequence_embedding: bool = False,
         sample_missing_docs: bool = True,
         **kwargs,
     ):
-        config_class.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.depth = depth
         self.add_extra_token = add_extra_token
-        self.other_sequence_embedding = other_sequence_embedding
         self.sample_missing_docs = sample_missing_docs
 
-    ModelSetEncoderConfig = type(
-        f"SetEncoder{model_name}Config",
-        (config_class,),
-        {
-            "__init__": config_init,
-            "model_type": f"set-encoder-{model_name.lower()}",
-            "ADDED_ARGS": (
-                CrossEncoderConfig.ADDED_ARGS
-                + [
-                    "depth",
-                    "add_extra_token",
-                    "other_sequence_embedding",
-                    "sample_missing_docs",
-                ]
-            ),
-            "TOKENIZER_ARGS": (CrossEncoderConfig.TOKENIZER_ARGS + ["add_extra_token"]),
-            "Tokenizer": SetEncoderTokenizer,
-        },
-    )
 
-    def model_init(
+class SetEncoderModel(CrossEncoderModel):
+    config_class = SetEncoderConfig
+    self_attention_pattern = "self"
+
+    def __init__(self, config: SetEncoderConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.config: SetEncoderConfig
+        self.attn_implementation = "eager"
+
+    def get_extended_attention_mask(
         self,
-        config: PretrainedConfig,
-    ) -> None:
-        TransformerModel.__init__(self, config)
-        Mixin.__init__(self, config, TransformerModel.forward)
-
-    set_encoder_class = type(
-        f"SetEncoder{model_name}Model",
-        (Mixin, TransformerModel),
-        {"__init__": model_init, "config_class": ModelSetEncoderConfig},
-    )
-    return set_encoder_class
-
-
-def get_mixin(TransformerModel: Type[PreTrainedModel]) -> Type[SetEncoderMixin]:
-    if issubclass(TransformerModel, BertPreTrainedModel):
-        return BertSetEncoderMixin
-    elif issubclass(TransformerModel, RobertaPreTrainedModel):
-        return RoBERTaSetEncoderMixin
-    elif issubclass(TransformerModel, ElectraPreTrainedModel):
-        return ElectraSetEncoderMixin
-    else:
-        raise ValueError(
-            f"Model type {TransformerModel.__name__} not supported by SetEncoder"
+        attention_mask: torch.Tensor,
+        input_shape: Tuple[int, ...],
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+        num_docs: Sequence[int] | None = None,
+    ) -> torch.Tensor:
+        # TODO doesn't get called
+        if num_docs is not None:
+            eye = (1 - torch.eye(self.config.depth, device=device)).long()
+            if not self.config.sample_missing_docs:
+                eye = eye[:, : max(num_docs)]
+            other_doc_attention_mask = torch.cat([eye[:n] for n in num_docs])
+            attention_mask = torch.cat(
+                [attention_mask, other_doc_attention_mask.to(attention_mask)],
+                dim=-1,
+            )
+            input_shape = tuple(attention_mask.shape)
+        return super().get_extended_attention_mask(
+            attention_mask, input_shape, device, dtype
         )
 
+    def forward(
+        self, encoding: BatchEncoding, num_docs: Sequence[int]
+    ) -> CrossEncoderOutput:
+        self.get_extended_attention_mask = partial(
+            self.get_extended_attention_mask, num_docs=num_docs
+        )
+        for name, module in self.named_modules():
+            if name.endswith(self.self_attention_pattern):
+                module.forward = partial(
+                    self.attention_forward, self, module, num_docs=num_docs
+                )
+        return super().forward(encoding)
 
-SetEncoderBertModel = SetEncoderClassFactory(MonoBertModel)
-SetEncoderElectraModel = SetEncoderClassFactory(MonoElectraModel)
-SetEncoderRobertaModel = SetEncoderClassFactory(MonoRobertaModel)
-SetEncoderBertConfig = SetEncoderBertModel.config_class
-SetEncoderElectraConfig = SetEncoderElectraModel.config_class
-SetEncoderRobertaConfig = SetEncoderRobertaModel.config_class
+    @staticmethod
+    def attention_forward(
+        _self,
+        self: torch.nn.Module,
+        hidden_states: torch.Tensor,
+        attention_mask: torch.FloatTensor | None,
+        *args,
+        num_docs: Sequence[int],
+        **kwargs,
+    ) -> Tuple[torch.Tensor]:
+        key_value_hidden_states = hidden_states
+        if num_docs is not None:
+            key_value_hidden_states = _self.cat_other_doc_hidden_states(
+                hidden_states, num_docs
+            )
+        query = self.transpose_for_scores(self.query(hidden_states))
+        key = self.transpose_for_scores(self.key(key_value_hidden_states))
+        value = self.transpose_for_scores(self.value(key_value_hidden_states))
 
+        context = torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attention_mask.to(query.dtype) if attention_mask is not None else None,
+            self.dropout.p if self.training else 0,
+        )
 
-@dataclass
-class SetEncoderOutput(CrossEncoderOuput):
-    repeat_logits: torch.Tensor | None = None
+        context = context.permute(0, 2, 1, 3).contiguous()
+        new_context_shape = context.size()[:-2] + (self.all_head_size,)
+        context = context.view(new_context_shape)
+        return (context,)
+
+    def cat_other_doc_hidden_states(
+        self,
+        hidden_states: torch.Tensor,
+        num_docs: Sequence[int],
+    ) -> torch.Tensor:
+        idx = 1 if self.config.add_extra_token else 0
+        split_other_doc_hidden_states = torch.split(
+            hidden_states[:, idx], list(num_docs)
+        )
+        repeated_other_doc_hidden_states = []
+        for idx, h_states in enumerate(split_other_doc_hidden_states):
+            missing_docs = (
+                0 if self.config.depth is None else self.config.depth - num_docs[idx]
+            )
+            if missing_docs and self.config.sample_missing_docs:
+                mean = h_states.mean(0, keepdim=True).expand(missing_docs, -1)
+                if num_docs[idx] == 1:
+                    std = torch.zeros_like(mean)
+                else:
+                    std = h_states.std(0, keepdim=True).expand(missing_docs, -1)
+                sampled_h_states = torch.normal(mean, std).to(h_states)
+                h_states = torch.cat([h_states, sampled_h_states])
+            repeated_other_doc_hidden_states.append(
+                h_states.unsqueeze(0).expand(num_docs[idx], -1, -1)
+            )
+        other_doc_hidden_states = torch.cat(repeated_other_doc_hidden_states)
+        key_value_hidden_states = torch.cat(
+            [hidden_states, other_doc_hidden_states], dim=1
+        )
+        return key_value_hidden_states
 
 
 class SetEncoderModule(CrossEncoderModule):
 
     def __init__(
         self,
-        model: CrossEncoderModel,
+        model_name_or_path: str | None = None,
+        config: CrossEncoderConfig | None = None,
+        model: CrossEncoderModel | None = None,
         loss_functions: Sequence[LossFunction] | None = None,
         evaluation_metrics: Sequence[str] | None = None,
         repeat_linear_layer: bool = False,
     ):
-        super().__init__(model, loss_functions, evaluation_metrics)
-        self.model.encoder.embeddings.position_embeddings.requires_grad_(False)
+        super().__init__(
+            model_name_or_path, config, model, loss_functions, evaluation_metrics
+        )
+        self.model: SetEncoderModel
         if (
             self.config.add_extra_token
             and len(self.tokenizer) != self.config.vocab_size
         ):
-            self.model.encoder.resize_token_embeddings(len(self.tokenizer), 8)
-            # word_embeddings = self.model.encoder.get_input_embeddings()
-            # word_embeddings.weight.data[self.tokenizer.interaction_token_id] = (
-            #     word_embeddings.weight.data[self.tokenizer.cls_token_id]
-            # )
-            # self.model.encoder.set_input_embeddings(word_embeddings)
-            # position_embeddings = self.model.encoder.embeddings.position_embeddings
-            # final_position = position_embeddings.weight.data[0].clone()
-            # position_embeddings.weight.data[2:] = position_embeddings.weight.data[
-            #     1:-1
-            # ].clone()
-            # position_embeddings.weight.data[1] = final_position
-            # self.model.encoder.embeddings.position_embeddings = position_embeddings
+            self.model.resize_token_embeddings(len(self.tokenizer), 8)
 
         self.repeat_linear = None
         if repeat_linear_layer:
@@ -156,27 +176,16 @@ class SetEncoderModule(CrossEncoderModule):
                 self.model.encoder.config.hidden_size, 1
             )
 
-    def forward(self, batch: CrossEncoderRunBatch) -> SetEncoderOutput:
-        num_docs = [len(doc_ids) for doc_ids in batch.doc_ids]
-        output = self.model.forward(
-            batch.encoding.input_ids,
-            batch.encoding.get("attention_mask", None),
-            batch.encoding.get("token_type_ids", None),
-            num_docs=num_docs,
-        )
-        repeat_logits = None
-        if self.repeat_linear is not None:
-            repeat_logits = self.repeat_linear(output.last_hidden_state[:, 0])
-        return SetEncoderOutput(
-            scores=output.scores,
-            repeat_logits=repeat_logits,
-            last_hidden_state=output.last_hidden_state,
-        )
+    def forward(self, batch: RankBatch) -> CrossEncoderOutput:
+        queries = list(batch.queries)
+        docs = [d for docs in batch.docs for d in docs]
+        num_docs = [len(docs) for docs in batch.docs]
+        encoding = self.prepare_input(queries, docs, num_docs)
+        output = self.model.forward(encoding["encoding"], num_docs)
+        return output
 
     def compute_losses(
-        self,
-        batch: CrossEncoderRunBatch,
-        loss_functions: Sequence[LossFunction] | None,
+        self, batch: TrainBatch, loss_functions: Sequence[LossFunction] | None
     ) -> Dict[str, torch.Tensor]:
         if loss_functions is None:
             if self.loss_functions is None:
@@ -187,8 +196,10 @@ class SetEncoderModule(CrossEncoderModule):
         if scores is None or batch.targets is None:
             raise ValueError("scores and targets must be set in the output and batch")
 
-        repeat_logits = output.repeat_logits
+        repeat_logits = None
         repeat_targets = None
+        if self.repeat_linear is not None:
+            repeat_logits = self.repeat_linear(output.embeddings)
 
         scores = scores.view(len(batch.query_ids), -1)
         targets = batch.targets.view(*scores.shape, -1)
@@ -213,132 +224,5 @@ class SetEncoderModule(CrossEncoderModule):
         return losses
 
 
-class SetEncoderBertModule(SetEncoderModule):
-    config_class = SetEncoderBertModel.config_class
-
-    def __init__(
-        self,
-        model: CrossEncoderModel | None = None,
-        model_name_or_path: str | None = None,
-        config: CrossEncoderConfig | None = None,
-        loss_functions: Sequence[LossFunction] | None = None,
-        evaluation_metrics: Sequence[str] | None = None,
-        repeat_linear_layer: bool = False,
-    ) -> None:
-        if config is not None:
-            config._attn_implementation = "eager"
-        if model is None:
-            if model_name_or_path is None:
-                if config is None:
-                    raise ValueError(
-                        "Either model, model_name_or_path, or config must be provided."
-                    )
-                if not isinstance(config, SetEncoderBertConfig):
-                    raise ValueError(
-                        "To initialize a new model pass a SetEncoderBertConfig."
-                    )
-                model = SetEncoderBertModel(config)
-            else:
-                kwargs = {}
-                if config is not None:
-                    kwargs = config.to_added_args_dict()
-                config = SetEncoderBertConfig.from_pretrained(
-                    model_name_or_path, **kwargs, _attn_implementation="eager"
-                )
-                model = SetEncoderBertModel.from_pretrained(
-                    model_name_or_path, config=config
-                )
-        else:
-            if not isinstance(model, SetEncoderBertModel):
-                raise ValueError("Incorrect model type. Expected SetEncoderBertModel.")
-        super().__init__(model, loss_functions, evaluation_metrics, repeat_linear_layer)
-
-
-class SetEncoderElectraModule(SetEncoderModule):
-    config_class = SetEncoderElectraConfig
-
-    def __init__(
-        self,
-        model: CrossEncoderModel | None = None,
-        model_name_or_path: str | None = None,
-        config: CrossEncoderConfig | None = None,
-        loss_functions: Sequence[LossFunction] | None = None,
-        evaluation_metrics: Sequence[str] | None = None,
-        repeat_linear_layer: bool = False,
-    ) -> None:
-        if model is None:
-            if model_name_or_path is None:
-                if config is None:
-                    raise ValueError(
-                        "Either model, model_name_or_path, or config must be provided."
-                    )
-                if not isinstance(config, SetEncoderElectraConfig):
-                    raise ValueError(
-                        "To initialize a new model pass a SetEncoderElectraConfig."
-                    )
-                model = SetEncoderElectraModel(config)
-            else:
-                kwargs = {}
-                if config is not None:
-                    kwargs = config.to_added_args_dict()
-                config = SetEncoderElectraConfig.from_pretrained(
-                    model_name_or_path, **kwargs
-                )
-                model = SetEncoderElectraModel.from_pretrained(
-                    model_name_or_path, config=config
-                )
-        else:
-            if not isinstance(model, SetEncoderElectraModel):
-                raise ValueError(
-                    "Incorrect model type. Expected SetEncoderElectraModel."
-                )
-        super().__init__(model, loss_functions, evaluation_metrics, repeat_linear_layer)
-
-
-class SetEncoderRobertaModule(SetEncoderModule):
-    config_class = SetEncoderRobertaConfig
-
-    def __init__(
-        self,
-        model: CrossEncoderModel | None = None,
-        model_name_or_path: str | None = None,
-        config: CrossEncoderConfig | None = None,
-        loss_functions: Sequence[LossFunction] | None = None,
-        evaluation_metrics: Sequence[str] | None = None,
-        repeat_linear_layer: bool = False,
-    ) -> None:
-        if model is None:
-            if model_name_or_path is None:
-                if config is None:
-                    raise ValueError(
-                        "Either model, model_name_or_path, or config must be provided."
-                    )
-                if not isinstance(config, SetEncoderRobertaConfig):
-                    raise ValueError(
-                        "To initialize a new model pass a SetEncoderRobertaConfig."
-                    )
-                model = SetEncoderRobertaModel(config)
-            else:
-                kwargs = {}
-                if config is not None:
-                    kwargs = config.to_added_args_dict()
-                config = SetEncoderRobertaConfig.from_pretrained(
-                    model_name_or_path, **kwargs
-                )
-                model = SetEncoderRobertaModel.from_pretrained(
-                    model_name_or_path, config=config
-                )
-        else:
-            if not isinstance(model, SetEncoderRobertaModel):
-                raise ValueError(
-                    "Incorrect model type. Expected SetEncoderRobertaModel."
-                )
-        super().__init__(model, loss_functions, evaluation_metrics, repeat_linear_layer)
-
-
-AutoConfig.register(SetEncoderBertConfig.model_type, SetEncoderBertConfig)
-AutoModel.register(SetEncoderBertConfig, SetEncoderBertModel)
-AutoConfig.register(SetEncoderElectraConfig.model_type, SetEncoderElectraConfig)
-AutoModel.register(SetEncoderElectraConfig, SetEncoderElectraModel)
-AutoConfig.register(SetEncoderRobertaConfig.model_type, SetEncoderRobertaConfig)
-AutoModel.register(SetEncoderRobertaConfig, SetEncoderRobertaModel)
+AutoConfig.register(SetEncoderConfig.model_type, SetEncoderConfig)
+AutoModel.register(SetEncoderConfig, SetEncoderModel)
