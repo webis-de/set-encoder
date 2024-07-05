@@ -1,0 +1,10 @@
+trainer:
+  accelerator: auto
+  strategy: auto
+  devices: auto
+  num_nodes: 1
+  logger: false
+  callbacks:
+    class_path: ReRankCallback
+    init_args:
+      save_dir: ./runs
