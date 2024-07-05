@@ -2,54 +2,25 @@
 
 This repository contains the code for the paper: `Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`.
 
-## Note
+We use [`lightning-ir`](https://github.com/webis-de/lightning-ir) to train and fine-tune models. Download and install the library to use the code in this repository.
 
-The repository is undergoing a major refactoring. The last stable version can be found under commit [`ef99e78`](https://github.com/webis-de/set-encoder/tree/ef99e78e2b40cfce055aa55a27d7ca0c40cf53b4).
+## Model Zoo
 
-## Data
+We provide the following pre-trained models:
 
-Training data must be generated prior to fine-tuning the model. The training code uses TREC-style run files to sample training data. We provide run files for ColBERTv2 and RankGPT-4-Turbo [here](https://zenodo.org/records/10952882). The run files are generated using the instructions below.
+| Model Name                                                          | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
+| ------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
+| [set-encoder-base](https://huggingface.co/webis/set-encoder-base)   | 0.724             | 0.710             | 0.788                  | 0.777                  |
+| [set-encoder-large](https://huggingface.co/webis/set-encoder-large) | 0.727             | 0.735             | 0.789                  | 0.790                  |
 
-To generate ColBERTv2 run files required for first-stage fine-tuning, run the following command:
+## Inference
 
-```sh
-python set_encoder/data/create_baseline_runs.py \
-    --ir_datasets msmarco-passage/train/judged \
-    --run_dir data/baseline-runs \
-    --index_dir data/indexes \
-    --checkpoint_path colbert-ir/colbertv2.0
+We recommend using the `lightning-ir` cli to run inference. The following command can be used to run inference using the `set-encoder-base` model on the TREC DL 19 and TREC DL 20 datasets:
+
+```bash
+lightning-ir re_rank --config configs/re-rank.yaml --config configs/set-encoder-finetuned.yaml --config configs/trec-dl.yaml
 ```
 
-To generate the fine-tuning data for the second stage, run (we first randomly sampled a subset of 1000 queries from the ColBERTv2 run):
+## Fine-Tuning
 
-```sh
-python rank_gpt.py \
-    --run_file data/baseline-runs/colbert/__sampled__msmarco-pasasge-train-judged.run \
-    --output_file data/baseline-runs/rankgpt-4-turbo \
-    --ir_dataset msmarco-passage/train/judged \
-    --api_key {YOUR_OPENAI_API_KEY} \
-    --model_name gpt-4-1106-preview \
-    --window_size 100
-```
-
-## Fine-tuning
-
-The main entry point for fine-tuning and inference is `main.py`. To train a model using ColBERTv2 hard negatives, set the correct paths for the training run files in `set_encoder/configs/msmarco-passage-colbert.yaml` and run:
-
-```sh
-python main.py fit \
-    --config set_encoder/configs/colbert-trainer.yaml \
-    --config set_encoder/configs/set-encoder.yaml \
-    --config set_encoder/configs/optimizer.yaml \
-    --config set_encoder/configs/msmarco-passage-colbert.yaml
-```
-
-To continue with LLM-distillation fine-tuning, set the correct paths for the training run files in `set_encoder/configs/msmarco-passage-rankgpt-4-turbo.yaml` and update the model path in `set_encoder/configs/set_encoder.yaml` and run:
-
-```sh
-python main.py fit \
-    --config set_encoder/configs/rankgpt-trainer.yaml \
-    --config set_encoder/configs/set-encoder.yaml \
-    --config set_encoder/configs/optimizer.yaml \
-    --config set_encoder/configs/msmarco-passage-rankgpt-4-turbo.yaml
-```
+WIP
