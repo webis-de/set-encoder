@@ -11,7 +11,7 @@ from lightning_ir import (
 )
 from lightning_ir.data import RankBatch
 from lightning_ir.loss.loss import LossFunction
-from transformers import AutoConfig, AutoModel, BatchEncoding
+from transformers import AutoConfig, AutoModel, AutoTokenizer, BatchEncoding
 
 from .loss import RepeatLossFunction
 from .tokenizer import SetEncoderTokenizer
@@ -21,9 +21,7 @@ class SetEncoderConfig(CrossEncoderConfig):
     model_type = "set-encoder"
     tokenizer_class = SetEncoderTokenizer
 
-    ADDED_ARGS = CrossEncoderConfig.ADDED_ARGS.union(
-        {"depth", "add_extra_token", "sample_missing_docs"}
-    )
+    ADDED_ARGS = CrossEncoderConfig.ADDED_ARGS.union({"depth", "add_extra_token", "sample_missing_docs"})
     TOKENIZER_ARGS = CrossEncoderConfig.TOKENIZER_ARGS.union({"add_extra_token"})
 
     def __init__(
@@ -57,7 +55,6 @@ class SetEncoderModel(CrossEncoderModel):
         dtype: torch.dtype | None = None,
         num_docs: Sequence[int] | None = None,
     ) -> torch.Tensor:
-        # TODO doesn't get called
         if num_docs is not None:
             eye = (1 - torch.eye(self.config.depth, device=device)).long()
             if not self.config.sample_missing_docs:
@@ -68,21 +65,13 @@ class SetEncoderModel(CrossEncoderModel):
                 dim=-1,
             )
             input_shape = tuple(attention_mask.shape)
-        return super().get_extended_attention_mask(
-            attention_mask, input_shape, device, dtype
-        )
+        return super().get_extended_attention_mask(attention_mask, input_shape, device, dtype)
 
-    def forward(
-        self, encoding: BatchEncoding, num_docs: Sequence[int]
-    ) -> CrossEncoderOutput:
-        self.get_extended_attention_mask = partial(
-            self.get_extended_attention_mask, num_docs=num_docs
-        )
+    def forward(self, encoding: BatchEncoding, num_docs: Sequence[int]) -> CrossEncoderOutput:
+        self.get_extended_attention_mask = partial(self.get_extended_attention_mask, num_docs=num_docs)
         for name, module in self.named_modules():
             if name.endswith(self.self_attention_pattern):
-                module.forward = partial(
-                    self.attention_forward, self, module, num_docs=num_docs
-                )
+                module.forward = partial(self.attention_forward, self, module, num_docs=num_docs)
         return super().forward(encoding)
 
     @staticmethod
@@ -97,9 +86,7 @@ class SetEncoderModel(CrossEncoderModel):
     ) -> Tuple[torch.Tensor]:
         key_value_hidden_states = hidden_states
         if num_docs is not None:
-            key_value_hidden_states = _self.cat_other_doc_hidden_states(
-                hidden_states, num_docs
-            )
+            key_value_hidden_states = _self.cat_other_doc_hidden_states(hidden_states, num_docs)
         query = self.transpose_for_scores(self.query(hidden_states))
         key = self.transpose_for_scores(self.key(key_value_hidden_states))
         value = self.transpose_for_scores(self.value(key_value_hidden_states))
@@ -123,14 +110,10 @@ class SetEncoderModel(CrossEncoderModel):
         num_docs: Sequence[int],
     ) -> torch.Tensor:
         idx = 1 if self.config.add_extra_token else 0
-        split_other_doc_hidden_states = torch.split(
-            hidden_states[:, idx], list(num_docs)
-        )
+        split_other_doc_hidden_states = torch.split(hidden_states[:, idx], list(num_docs))
         repeated_other_doc_hidden_states = []
         for idx, h_states in enumerate(split_other_doc_hidden_states):
-            missing_docs = (
-                0 if self.config.depth is None else self.config.depth - num_docs[idx]
-            )
+            missing_docs = 0 if self.config.depth is None else self.config.depth - num_docs[idx]
             if missing_docs and self.config.sample_missing_docs:
                 mean = h_states.mean(0, keepdim=True).expand(missing_docs, -1)
                 if num_docs[idx] == 1:
@@ -139,13 +122,9 @@ class SetEncoderModel(CrossEncoderModel):
                     std = h_states.std(0, keepdim=True).expand(missing_docs, -1)
                 sampled_h_states = torch.normal(mean, std).to(h_states)
                 h_states = torch.cat([h_states, sampled_h_states])
-            repeated_other_doc_hidden_states.append(
-                h_states.unsqueeze(0).expand(num_docs[idx], -1, -1)
-            )
+            repeated_other_doc_hidden_states.append(h_states.unsqueeze(0).expand(num_docs[idx], -1, -1))
         other_doc_hidden_states = torch.cat(repeated_other_doc_hidden_states)
-        key_value_hidden_states = torch.cat(
-            [hidden_states, other_doc_hidden_states], dim=1
-        )
+        key_value_hidden_states = torch.cat([hidden_states, other_doc_hidden_states], dim=1)
         return key_value_hidden_states
 
 
@@ -156,25 +135,18 @@ class SetEncoderModule(CrossEncoderModule):
         model_name_or_path: str | None = None,
         config: CrossEncoderConfig | None = None,
         model: CrossEncoderModel | None = None,
-        loss_functions: Sequence[LossFunction] | None = None,
+        loss_functions: Sequence[LossFunction | Tuple[LossFunction, float]] | None = None,
         evaluation_metrics: Sequence[str] | None = None,
         repeat_linear_layer: bool = False,
     ):
-        super().__init__(
-            model_name_or_path, config, model, loss_functions, evaluation_metrics
-        )
+        super().__init__(model_name_or_path, config, model, loss_functions, evaluation_metrics)
         self.model: SetEncoderModel
-        if (
-            self.config.add_extra_token
-            and len(self.tokenizer) != self.config.vocab_size
-        ):
+        if self.config.add_extra_token and len(self.tokenizer) != self.config.vocab_size:
             self.model.resize_token_embeddings(len(self.tokenizer), 8)
 
         self.repeat_linear = None
         if repeat_linear_layer:
-            self.repeat_linear = torch.nn.Linear(
-                self.model.encoder.config.hidden_size, 1
-            )
+            self.repeat_linear = torch.nn.Linear(self.model.encoder.config.hidden_size, 1)
 
     def forward(self, batch: RankBatch) -> CrossEncoderOutput:
         queries = list(batch.queries)
@@ -214,15 +186,12 @@ class SetEncoderModule(CrossEncoderModule):
         for loss_function in loss_functions:
             if isinstance(loss_function, RepeatLossFunction):
                 if repeat_logits is not None and repeat_targets is not None:
-                    losses[loss_function.__class__.__name__] = (
-                        loss_function.compute_loss(repeat_logits, repeat_targets)
-                    )
+                    losses[loss_function.__class__.__name__] = loss_function.compute_loss(repeat_logits, repeat_targets)
             else:
-                losses[loss_function.__class__.__name__] = loss_function.compute_loss(
-                    scores, targets
-                )
+                losses[loss_function.__class__.__name__] = loss_function.compute_loss(scores, targets)
         return losses
 
 
 AutoConfig.register(SetEncoderConfig.model_type, SetEncoderConfig)
 AutoModel.register(SetEncoderConfig, SetEncoderModel)
+AutoTokenizer.register(SetEncoderConfig, SetEncoderTokenizer)

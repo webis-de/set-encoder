@@ -10,26 +10,21 @@ from ir_datasets.formats import TrecSubQrels
 from ir_datasets.util import Cache
 from lightning_ir.data.dataset import (
     GenericDocPair,
+    RankSample,
     RunDataset,
-    RunSample,
     ScoredDocTuple,
     TupleDataset,
 )
 
 
 def register_trec_dl_subtopics():
-    data_dir = Path(
-        "/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/"
-        "colbert-subtopics"
-    )
+    data_dir = Path("/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/" "colbert-subtopics")
     for year in ("2019", "2020"):
         base_dataset_id = f"msmarco-passage/trec-dl-{year}/judged"
         dataset_id = base_dataset_id + "/subtopics"
         if dataset_id in ir_datasets.registry:
             continue
-        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(
-            ".qrels"
-        )
+        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(".qrels")
         ir_dataset = ir_datasets.load(base_dataset_id)
         collection = ir_dataset.docs_handler()
         queries = ir_dataset.queries_handler()
@@ -39,18 +34,13 @@ def register_trec_dl_subtopics():
 
 
 def register_trec_dl_novelty():
-    data_dir = Path(
-        "/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/"
-        "trec-dl-novelty"
-    )
+    data_dir = Path("/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/" "trec-dl-novelty")
     for suffix, year in zip(("", "", "-v2", "-v2"), ("2019", "2020", "2021", "2022")):
         base_dataset_id = f"msmarco-passage{suffix}/trec-dl-{year}/judged"
         dataset_id = base_dataset_id + "/novelty"
         if dataset_id in ir_datasets.registry:
             continue
-        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(
-            ".qrels"
-        )
+        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(".qrels")
         ir_dataset = ir_datasets.load(base_dataset_id)
         collection = ir_dataset.docs_handler()
         queries = ir_dataset.queries_handler()
@@ -73,7 +63,7 @@ class SubtopicRunDataset(RunDataset):
     def load_qrels(self, *args, **kwargs) -> pd.DataFrame | None:
         return None
 
-    def __getitem__(self, idx: int) -> RunSample:
+    def __getitem__(self, idx: int) -> RankSample:
         query_id = str(self.query_ids[idx])
         group = self.run_groups.get_group(query_id).copy()
         query = self.queries[query_id]
@@ -83,12 +73,12 @@ class SubtopicRunDataset(RunDataset):
         docs = tuple(self.docs.get(doc_id).default_text() for doc_id in doc_ids)
 
         targets = torch.tensor(group["iteration"].values)
-        return RunSample(query_id, query, doc_ids, docs, targets)
+        return RankSample(query_id, query, doc_ids, docs, targets)
 
 
 class RepeatRunDataset(RunDataset):
 
-    def __getitem__(self, idx: int) -> RunSample:
+    def __getitem__(self, idx: int) -> RankSample:
         sample = super().__getitem__(idx)
         doc_ids = sample.doc_ids
         docs = sample.docs
@@ -102,7 +92,7 @@ class RepeatRunDataset(RunDataset):
             original_targets = sample.targets
             original_targets = torch.cat([original_targets, torch.zeros((1, 1))])
             targets = torch.cat([original_targets, repeat_targets], axis=1)
-        sample = RunSample(sample.query_id, sample.query, doc_ids, docs, targets)
+        sample = RankSample(sample.query_id, sample.query, doc_ids, docs, targets)
         return sample
 
 
@@ -116,9 +106,7 @@ class DummyDataset(TupleDataset):
     ) -> None:
         super().__init__(tuples_dataset, targets, num_docs)
 
-    def parse_sample(
-        self, sample: ScoredDocTuple | GenericDocPair
-    ) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    def parse_sample(self, sample: ScoredDocTuple | GenericDocPair) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
         if isinstance(sample, GenericDocPair):
             doc_ids = (sample.doc_id_a, sample.doc_id_b)
         elif isinstance(sample, ScoredDocTuple):
@@ -128,7 +116,7 @@ class DummyDataset(TupleDataset):
         docs = tuple(self.docs.get(doc_id).default_text() for doc_id in doc_ids)
         return doc_ids, docs
 
-    def __iter__(self) -> Iterator[RunSample]:
+    def __iter__(self) -> Iterator[RankSample]:
         for sample in self.ir_dataset.docpairs_iter():
             query_id = sample.query_id
             query = self.queries.loc[query_id]
@@ -139,4 +127,4 @@ class DummyDataset(TupleDataset):
             targets = torch.zeros(len(docs))
             targets[idx] = 1
             targets[-(self.num_docs - 1) :] = 1
-            yield RunSample(query_id, query, doc_ids, docs, targets)
+            yield RankSample(query_id, query, doc_ids, docs, targets)

@@ -7,13 +7,12 @@ class SetEncoderTokenizer(CrossEncoderTokenizer):
 
     def __init__(
         self,
-        tokenizer: PreTrainedTokenizerBase,
         query_length: int = 32,
         doc_length: int = 512,
         add_extra_token: bool = False,
         **kwargs,
     ):
-        super().__init__(tokenizer, query_length, doc_length, **kwargs)
+        super().__init__(query_length=query_length, doc_length=doc_length, **kwargs)
         self.interaction_token = "[INT]"
         if add_extra_token:
             self.add_tokens([self.interaction_token], special_tokens=True)
