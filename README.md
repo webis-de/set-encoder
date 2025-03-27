@@ -1,6 +1,6 @@
 # Set-Encoder
 
-This repository contains the code for the paper: [`Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`](https://arxiv.org/abs/2404.06912).
+This repository contains the code for the paper: [`Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders`](https://webis.de/publications.html#schlatt_2025b) accepted at ECIR'25.
 
 We use [`lightning-ir`](https://github.com/webis-de/lightning-ir) to train and fine-tune models. Download and install the library to use the code in this repository.
 
