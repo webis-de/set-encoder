@@ -2,6 +2,7 @@ import torch
 import transformers
 import numpy as np
 from torch.utils.data import DataLoader, SequentialSampler
+import time
 
 from src.options import Options
 import src.data
@@ -73,6 +74,10 @@ if __name__ == "__main__":
     stride = opt.stride
     window_size = opt.n_passages
 
+    torch.cuda.reset_max_memory_allocated()
+    max_mem = torch.cuda.max_memory_allocated()
+    start = time.perf_counter()
+
     print("Start Inference")
     for passes in range(1):
         for window_start_idx in range(opt.n_rerank_passages - window_size, -1, -stride):
@@ -112,6 +117,9 @@ if __name__ == "__main__":
                     response = response + [tt for tt in original_rank if tt not in response]
                     for j, x in enumerate(response):
                         query_dict['ctxs'][j + window_start_idx] = resort_passages[x]
+
+    print("Inference Time: ", time.perf_counter() - start)
+    print(f"Max memory allocated: {torch.cuda.max_memory_allocated() - max_mem}")
 
     with open(opt.runfile_path, 'w') as f:
         for query in eval_dataset.data:
