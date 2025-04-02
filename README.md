@@ -24,3 +24,21 @@ lightning-ir re_rank --config configs/re-rank.yaml --config configs/set-encoder-
 ## Fine-Tuning
 
 WIP
+
+## Citation
+
+If you use this code or the models in your research, please cite our paper:
+
+```bibtex
+@InProceedings{schlatt:2025,
+  address =                  {Berlin Heidelberg New York},
+  author =                   {Ferdinand Schlatt and Maik Fr{\"o}be and Harrisen Scells and Shengyao Zhuang and Bevan Koopman and Guido Zuccon and Benno Stein and Martin Potthast and Matthias Hagen},
+  booktitle =                {Advances in Information Retrieval. 47th European Conference on IR Research (ECIR 2025)},
+  doi =                      {10.1007/978-3-031-88711-6_1},
+  month =                    apr,
+  publisher =                {Springer},
+  series =                   {Lecture Notes in Computer Science},
+  site =                     {Lucca, Italy},
+  title =                    {{Set-Encoder: Permutation-Invariant Inter-Passage Attention for Listwise Passage Re-Ranking with Cross-Encoders}},
+  year =                     2025
+}
