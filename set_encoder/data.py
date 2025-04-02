@@ -2,12 +2,9 @@ import random
 from pathlib import Path
 from typing import Iterator, Literal, Tuple
 
-import ir_datasets
 import pandas as pd
 import torch
-from ir_datasets.datasets.base import Dataset
-from ir_datasets.formats import TrecSubQrels
-from ir_datasets.util import Cache
+from ir_datasets.util import GzipExtract
 from lightning_ir.data.dataset import (
     GenericDocPair,
     RankSample,
@@ -15,38 +12,56 @@ from lightning_ir.data.dataset import (
     ScoredDocTuple,
     TupleDataset,
 )
+from lightning_ir.data.external_datasets import register_new_dataset
 
 
-def register_trec_dl_subtopics():
-    data_dir = Path("/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/" "colbert-subtopics")
-    for year in ("2019", "2020"):
-        base_dataset_id = f"msmarco-passage/trec-dl-{year}/judged"
-        dataset_id = base_dataset_id + "/subtopics"
-        if dataset_id in ir_datasets.registry:
-            continue
-        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(".qrels")
-        ir_dataset = ir_datasets.load(base_dataset_id)
-        collection = ir_dataset.docs_handler()
-        queries = ir_dataset.queries_handler()
-        qrels = TrecSubQrels(Cache(None, qrels_path), "")
-        dataset = Dataset(collection, queries, qrels)
-        ir_datasets.registry.register(dataset_id, dataset)
+def register_rank_distillm_novelty():
+    dlc_contents = {
+        "url": (
+            "https://zenodo.org/records/15125408/files/__colbert-10000-sampled-100__msmarco-passage-train-judged.run.gz"
+            "?download=1"
+        ),
+        "expected_md5": "773c0402a86e5ecf2aa46144e9c8fca3",
+        "cache_path": "msmarco-passage/train/rank-distillm-novelty-rankzephyr.run",
+        "extractors": [GzipExtract],
+    }
+
+    register_new_dataset(
+        "msmarco-passage/train/rank-distillm-novelty",
+        docs="msmarco-passage",
+        queries="msmarco-passage/train",
+        qrels="msmarco-passage/train",
+        scoreddocs=dlc_contents,
+    )
+
+    dlc_contents = {
+        "url": "https://zenodo.org/records/15125408/files/msmarco-passage-trec-dl-2019-judged.qrels?download=1",
+        "expected_md5": "bd879599313621d0c30dad694091783a",
+        "cache_path": "msmarco-passage/trec-dl-2019/novelty.qrels",
+    }
+
+    register_new_dataset(
+        "msmarco-passage/trec-dl-2019/judged/novelty",
+        docs="msmarco-passage",
+        queries="msmarco-passage/trec-dl-2019/judged",
+        qrels=dlc_contents,
+    )
+
+    dlc_contents = {
+        "url": "https://zenodo.org/records/15125408/files/msmarco-passage-trec-dl-2020-judged.qrels?download=1",
+        "expected_md5": "ac9e766af46df4716672865e04fe9995",
+        "cache_path": "msmarco-passage/trec-dl-2020/novelty.qrels",
+    }
+
+    register_new_dataset(
+        "msmarco-passage/trec-dl-2020/judged/novelty",
+        docs="msmarco-passage",
+        queries="msmarco-passage/trec-dl-2020/judged",
+        qrels=dlc_contents,
+    )
 
 
-def register_trec_dl_novelty():
-    data_dir = Path("/mnt/ceph/storage/data-tmp/current/fschlatt/set_encoder/data/baseline-runs/" "trec-dl-novelty")
-    for suffix, year in zip(("", "", "-v2", "-v2"), ("2019", "2020", "2021", "2022")):
-        base_dataset_id = f"msmarco-passage{suffix}/trec-dl-{year}/judged"
-        dataset_id = base_dataset_id + "/novelty"
-        if dataset_id in ir_datasets.registry:
-            continue
-        qrels_path = (data_dir / base_dataset_id.replace("/", "-")).with_suffix(".qrels")
-        ir_dataset = ir_datasets.load(base_dataset_id)
-        collection = ir_dataset.docs_handler()
-        queries = ir_dataset.queries_handler()
-        qrels = TrecSubQrels(Cache(None, qrels_path), "")
-        dataset = Dataset(collection, queries, qrels)
-        ir_datasets.registry.register(dataset_id, dataset)
+register_rank_distillm_novelty()
 
 
 class SubtopicRunDataset(RunDataset):
