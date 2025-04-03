@@ -18,10 +18,10 @@ lightning-ir re_rank --config ./configs/re-rank.yaml --model.model_name_or_path 
 
 (nDCG@10 on TREC DL 19 and TREC DL 20)
 
-| Model Name                                                                         | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
-| ---------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
-| [set-encoder-base](https://huggingface.co/webis/set-encoder-base)                  | 0.724             | 0.710             | 0.788                  | 0.777                  |
-| [set-encoder-large](https://huggingface.co/webis/set-encoder-large)                | 0.727             | 0.735             | 0.789                  | 0.790                  |
+| Model Name                                                                               | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
+| ---------------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
+| [webis/set-encoder-base](https://huggingface.co/webis/set-encoder-base)                  | 0.746             | 0.704             | 0.781                  | 0.768                  |
+| [webis/set-encoder-large](https://huggingface.co/webis/set-encoder-large)                | 0.750             | 0.722             | 0.789                  | 0.791                  |
 
 
 ### Novelty-Aware Re-Ranking
@@ -36,9 +36,9 @@ lightning-ir re_rank --config ./configs/re-rank-novelty.yaml --model.model_name_
 
 (alpha nDCG@10, alpha=0.99 on TREC DL 19 and TREC DL 20)
 
-| Model Name                                                                         | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
-| ---------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
-| [set-encoder-novelty-base](https://huggingface.co/webis/set-encoder-novelty-base)  | 0.727             | 0.735             | 0.789                  | 0.790                  |
+| Model Name                                                                               | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
+| ---------------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
+| [webis/set-encoder-novelty-base](https://huggingface.co/webis/set-encoder-novelty-base)  | 0.805             | 0.721             | 0.821                  | 0.803                  |
 
 ## Fine-Tuning
 

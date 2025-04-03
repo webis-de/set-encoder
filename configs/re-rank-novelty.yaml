@@ -8,7 +8,7 @@ data:
   class_path: LightningIRDataModule
   init_args:
     num_workers: 1
-    inference_batch_size: 1
+    inference_batch_size: 4
     inference_datasets:
       - class_path: RunDataset
         init_args:
