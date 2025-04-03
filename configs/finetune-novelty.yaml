@@ -1,0 +1,39 @@
+seed_everything: 42
+trainer:
+  precision: bf16-mixed
+  max_epochs: 3
+  callbacks:
+  - class_path: set_encoder.data.RegisterRankDistiLLMNovelty
+data:
+  class_path: LightningIRDataModule
+  init_args:
+    num_workers: 4
+    train_batch_size: 32
+    train_dataset:
+      class_path: set_encoder.data.SubtopicRunDataset
+      init_args:
+        run_path_or_id: msmarco-passage/train/rank-distillm-novelty
+        targets: rank
+        depth: 100
+        sample_size: 100
+        sampling_strategy: top
+model:
+  class_path: set_encoder.module.SetEncoderModule
+  init_args:
+    model_name_or_path: path-to-local-checkpoint
+    # model_name_or_path: google/electra-base-discriminator
+    # model_name_or_path: google/electra-large-discriminator
+    config:
+      class_path: SetEncoderConfig
+      init_args:
+        query_length: 32
+        doc_length: 256
+        depth: 100
+        add_extra_token: true
+        sample_missing_docs: true
+    loss_functions:
+      - class_path: set_encoder.loss.DuplicateAwareRankNet
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 1.0e-05

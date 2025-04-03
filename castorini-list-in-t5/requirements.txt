@@ -1,4 +1,0 @@
-torch==2.0.1
-transformers==4.38.0
-pyserini
-faiss-cpu

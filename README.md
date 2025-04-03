@@ -6,24 +6,54 @@ We use [`lightning-ir`](https://github.com/webis-de/lightning-ir) to train and f
 
 ## Model Zoo
 
-We provide the following pre-trained models:
+### General Purpose Re-Ranking
 
-| Model Name                                                          | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
-| ------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
-| [set-encoder-base](https://huggingface.co/webis/set-encoder-base)   | 0.724             | 0.710             | 0.788                  | 0.777                  |
-| [set-encoder-large](https://huggingface.co/webis/set-encoder-large) | 0.727             | 0.735             | 0.789                  | 0.790                  |
+We provide the following pre-trained models for general purpose re-ranking.
 
-## Inference
-
-We recommend using the `lightning-ir` cli to run inference. The following command can be used to run inference using the `set-encoder-base` model on the TREC DL 19 and TREC DL 20 datasets:
+To reproduce the results, run the following command:
 
 ```bash
-lightning-ir re_rank --config configs/re-rank.yaml --config configs/set-encoder-finetuned.yaml --config configs/trec-dl.yaml
+lightning-ir re_rank --config ./configs/re-rank.yaml --model.model_name_or_path <MODEL_NAME> 
 ```
+
+(nDCG@10 on TREC DL 19 and TREC DL 20)
+
+| Model Name                                                                         | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
+| ---------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
+| [set-encoder-base](https://huggingface.co/webis/set-encoder-base)                  | 0.724             | 0.710             | 0.788                  | 0.777                  |
+| [set-encoder-large](https://huggingface.co/webis/set-encoder-large)                | 0.727             | 0.735             | 0.789                  | 0.790                  |
+
+
+### Novelty-Aware Re-Ranking
+
+We provide the following fine-tuned models for novelty-aware re-ranking.
+
+To reproduce the results, run the following command:
+
+```bash
+lightning-ir re_rank --config ./configs/re-rank-novelty.yaml --model.model_name_or_path <MODEL_NAME> 
+```
+
+(alpha nDCG@10, alpha=0.99 on TREC DL 19 and TREC DL 20)
+
+| Model Name                                                                         | TREC DL 19 (BM25) | TREC DL 20 (BM25) | TREC DL 19 (ColBERTv2) | TREC DL 20 (ColBERTv2) |
+| ---------------------------------------------------------------------------------- | ----------------- | ----------------- | ---------------------- | ---------------------- |
+| [set-encoder-novelty-base](https://huggingface.co/webis/set-encoder-novelty-base)  | 0.727             | 0.735             | 0.789                  | 0.790                  |
 
 ## Fine-Tuning
 
-WIP
+Pre-fine-tuning (first stage fine-tuning using positive samples from MS MARCO and hard-negatives sampled using ColBERTv2 with Duplicate-Aware InfoNCE) of a Set-Encoder model can be done using the following command.
+
+```bash
+lightning-ir fit --config ./configs/pre-finetune.yaml
+```
+
+The model can be further fine-tuned (second stage fine-tuning using the RankDistiLLM or RankDistiLLM-Novelty dataset with RankNet or Novelty-Aware RankNet loss) using the following command. The model checkpoint from the pre-fine-tuning stage can be used as a starting point.
+
+```bash
+lightning-ir fit --config ./configs/fine-tune.yaml
+lightning-ir fit --config ./configs/fine-tune-novelty.yaml 
+```
 
 ## Citation
 

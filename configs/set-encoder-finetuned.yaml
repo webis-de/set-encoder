@@ -1,6 +1,0 @@
-model:
-  class_path: set_encoder.set_encoder.SetEncoderModule
-  init_args:
-    model_name_or_path: webis/set-encoder-base
-    evaluation_metrics:
-      - nDCG@10

@@ -2,6 +2,8 @@ trainer:
   precision: bf16-mixed
   logger: false
   enable_checkpointing: false
+  callbacks:
+  - class_path: set_encoder.data.RegisterRankDistiLLMNovelty
 data:
   class_path: LightningIRDataModule
   init_args:
@@ -10,22 +12,22 @@ data:
     inference_datasets:
       - class_path: RunDataset
         init_args:
-          run_path_or_id: ./data/runs/__colbert__msmarco-passage-trec-dl-2019-judged.run
+          run_path_or_id: ./data/runs/__colbert__msmarco-passage-trec-dl-2019-judged-novelty.run
           depth: 100
           sampling_strategy: top
       - class_path: RunDataset
         init_args:
-          run_path_or_id: ./data/runs/__colbert__msmarco-passage-trec-dl-2020-judged.run
+          run_path_or_id: ./data/runs/__colbert__msmarco-passage-trec-dl-2020-judged-novelty.run
           depth: 100
           sampling_strategy: top
       - class_path: RunDataset
         init_args:
-          run_path_or_id: ./data/runs/__bm25__msmarco-passage-trec-dl-2019-judged.run
+          run_path_or_id: ./data/runs/__bm25__msmarco-passage-trec-dl-2019-judged-novelty.run
           depth: 100
           sampling_strategy: top
       - class_path: RunDataset
         init_args:
-          run_path_or_id: ./data/runs/__bm25__msmarco-passage-trec-dl-2020-judged.run
+          run_path_or_id: ./data/runs/__bm25__msmarco-passage-trec-dl-2020-judged-novelty.run
           depth: 100
           sampling_strategy: top
 model:
@@ -33,4 +35,4 @@ model:
   init_args:
     model_name_or_path: null
     evaluation_metrics:
-    - nDCG@10
+    - alpha_nDCG(alpha=0.99)@10
