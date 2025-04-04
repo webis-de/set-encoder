@@ -17,7 +17,7 @@ def register_rank_distillm_novelty():
             "?download=1"
         ),
         "expected_md5": "773c0402a86e5ecf2aa46144e9c8fca3",
-        "cache_path": "train/rank-distillm/rankzephyr-novelty.run",
+        "cache_path": "msmarco-passage/train/rank-distillm/rankzephyr-novelty.run",
         "extractors": [GzipExtract],
     }
 
