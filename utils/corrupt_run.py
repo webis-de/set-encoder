@@ -1,10 +1,11 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-import pandas as pd
-from ir_dataset_utils import DASHED_DATASET_MAP
 import ir_datasets
 import numpy as np
+import pandas as pd
+
+DASHED_DATASET_MAP = {dataset.replace("/", "-"): dataset for dataset in ir_datasets.registry._registered}
 
 RUN_HEADER = ["query_id", "q0", "doc_id", "rank", "score", "system"]
 
@@ -26,9 +27,9 @@ def main(args=None):
         dtype={"query_id": str, "doc_id": str},
     )
     run = run.loc[run["rank"] <= args.depth]
-    qrels = pd.DataFrame(
-        ir_datasets.load(DASHED_DATASET_MAP[args.run_path.stem]).qrels_iter()
-    ).drop(columns=["iteration"], errors="ignore")
+    qrels = pd.DataFrame(ir_datasets.load(DASHED_DATASET_MAP[args.run_path.stem]).qrels_iter()).drop(
+        columns=["iteration"], errors="ignore"
+    )
     run = run.merge(
         qrels,
         left_on=["query_id", "doc_id"],
