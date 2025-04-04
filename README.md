@@ -42,7 +42,7 @@ lightning-ir re_rank --config ./configs/re-rank-novelty.yaml --model.model_name_
 
 ## Fine-Tuning
 
-Pre-fine-tuning (first stage fine-tuning using positive samples from MS MARCO and hard-negatives sampled using ColBERTv2 with Duplicate-Aware InfoNCE) of a Set-Encoder model can be done using the following command.
+Pre-fine-tuning (first stage fine-tuning using positive samples from MS MARCO and hard-negatives sampled using ColBERTv2 with Novelty-Aware InfoNCE) of a Set-Encoder model can be done using the following command.
 
 ```bash
 lightning-ir fit --config ./configs/pre-finetune.yaml
