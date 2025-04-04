@@ -137,11 +137,4 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-/data/baseline-runs
-/data/misc
-/models
-log*.txt
-/scripts
-logs
-debug-*.yaml
-/experiments*
+data/runs/experiments
