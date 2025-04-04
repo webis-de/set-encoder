@@ -6,14 +6,14 @@ We use [`lightning-ir`](https://github.com/webis-de/lightning-ir) to train and f
 
 ## Model Zoo
 
-### General Purpose Re-Ranking
+### General-Purpose Re-Ranking
 
-We provide the following pre-trained models for general purpose re-ranking.
+We provide the following pre-trained models for general-purpose re-ranking.
 
 To reproduce the results, run the following command:
 
 ```bash
-lightning-ir re_rank --config ./configs/re-rank.yaml --model.model_name_or_path <MODEL_NAME> 
+lightning-ir re_rank --config ./configs/re-rank.yaml --model.model_name_or_path <MODEL_NAME>
 ```
 
 (nDCG@10 on TREC DL 19 and TREC DL 20)
@@ -31,7 +31,7 @@ We provide the following fine-tuned models for novelty-aware re-ranking.
 To reproduce the results, run the following command:
 
 ```bash
-lightning-ir re_rank --config ./configs/re-rank-novelty.yaml --model.model_name_or_path <MODEL_NAME> 
+lightning-ir re_rank --config ./configs/re-rank-novelty.yaml --model.model_name_or_path <MODEL_NAME>
 ```
 
 (alpha nDCG@10, alpha=0.99 on TREC DL 19 and TREC DL 20)
@@ -52,7 +52,7 @@ The model can be further fine-tuned (second stage fine-tuning using the RankDist
 
 ```bash
 lightning-ir fit --config ./configs/fine-tune.yaml
-lightning-ir fit --config ./configs/fine-tune-novelty.yaml 
+lightning-ir fit --config ./configs/fine-tune-novelty.yaml
 ```
 
 ## Citation
