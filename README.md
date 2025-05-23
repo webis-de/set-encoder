@@ -55,6 +55,10 @@ lightning-ir fit --config ./configs/fine-tune.yaml
 lightning-ir fit --config ./configs/fine-tune-novelty.yaml
 ```
 
+## Data
+
+The data for novelty-aware fine-tuning and evaluation can be found on [Zenodo](https://zenodo.org/records/15125408).
+
 ## Reproduction
 
 We have uploaded the run files to reproduce the results in [Zenodo](https://zenodo.org/records/15148723). Download and unpack the `experiments.tar.gz` file and then run the `notebooks/effectiveness.ipynb` notebook to reproduce the results.
